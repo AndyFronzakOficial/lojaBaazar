@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
+  
+
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
     "jspdf": "^2.5.2",
