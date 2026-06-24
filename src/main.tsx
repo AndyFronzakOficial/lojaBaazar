@@ -978,8 +978,8 @@ function ReportsPage() {
             <input className="input" type="month" value={month} onChange={e => setMonth(e.target.value)} />
           </div>
           <button className="btn self-end" onClick={load}>Atualizar</button>
-          <button className="btn2 self-end flex items-center justify-center gap-2" onClick={exportPDF}><Download size={16}/> PDF profissional</button>
-          <button className="btn2 self-end" onClick={exportExcel}>Excel traduzido</button>
+          <button className="btn2 self-end flex items-center justify-center gap-2" onClick={exportPDF}><Download size={16}/> PDF </button>
+          <button className="btn2 self-end" onClick={exportExcel}>Excel </button>
         </div>
       </section>
 
