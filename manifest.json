@@ -1,0 +1,11 @@
+{
+  "background_color": "#ffffff",
+  "dir": "ltr",
+  "display": "standalone",
+  "name": "bazar-woad-chi",
+  "orientation": "any",
+  "scope": "/",
+  "short_name": "bazar-woad-chi.vercel",
+  "start_url": "/",
+  "theme_color": "#ffffff"
+}
