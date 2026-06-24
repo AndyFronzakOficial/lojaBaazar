@@ -202,8 +202,8 @@ function gerarCupom80mm({ saleId, settings, items, subtotal, discount, addition,
 
 
 function Login() {
-  const [email, setEmail] = useState('admin@loja.com')
-  const [password, setPassword] = useState('123456')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
   async function signIn(e: React.FormEvent) {
@@ -216,9 +216,8 @@ function Login() {
   return (
     <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
       <form onSubmit={signIn} className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl">
-        <div className="h-14 w-14 rounded-2xl bg-emerald-500 flex items-center justify-center font-black text-slate-950 text-2xl">B</div>
-        <h1 className="mt-6 text-3xl font-bold">Bazar Eletrônicos</h1>
-        <p className="text-slate-400 mt-2">Cada login acessa sua própria loja.</p>
+        <h1 className="mt-6 text-3xl  font-bold text-center">Login</h1>
+        
         <label className="label mt-8">E-mail</label>
         <input className="input" value={email} onChange={e => setEmail(e.target.value)} />
         <label className="label mt-4">Senha</label>
@@ -251,7 +250,7 @@ function Sidebar({ page, setPage, collapsed, setCollapsed }: { page: Page, setPa
       <div className="flex items-center justify-between gap-3 px-2 py-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="h-11 w-11 rounded-xl bg-emerald-500 text-slate-950 font-black flex items-center justify-center shrink-0">B</div>
-          {!collapsed && <div><strong>Bazar ERP</strong><p className="text-xs text-slate-400">V18 multi-loja</p></div>}
+          {!collapsed && <div><strong>ERP</strong><p className="text-xs text-slate-400"></p></div>}
         </div>
 
         <button type="button" onClick={() => setCollapsed(!collapsed)} className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-900" title={collapsed ? 'Mostrar menu' : 'Ocultar menu'}>
