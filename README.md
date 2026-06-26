@@ -120,3 +120,83 @@ Antes de usar, rode no Supabase:
 ```txt
 supabase/v21_ordem_servico_completa_migration.sql
 ```
+
+
+## Correção V21
+
+Corrigido erro de tela branca:
+
+- Removido conflito entre `import ServiceOrdersPage from './ServiceOrdersPage'` e `function ServiceOrdersPage()` dentro do `main.tsx`.
+- Adicionado `src/vite-env.d.ts`.
+- Adicionado `"types": ["vite/client"]` no `tsconfig.json`.
+- Adicionado `vercel.json` forçando `npm install`.
+
+Se aparecer tela branca, pare o servidor e rode:
+
+```bash
+CTRL + C
+npm install
+npm run dev
+```
+
+No Vercel, faça redeploy com **Clear Build Cache**.
+
+
+## Atualização CRUD
+
+Incluído nesta versão:
+- Financeiro: adicionar, consultar, alterar, excluir e baixar pagamento.
+- Produtos: adicionar, consultar, alterar e excluir.
+- Clientes: adicionar, consultar, alterar, excluir e botão de WhatsApp.
+
+
+## V22 — Romaneio + Upload de Logo
+
+Incluído:
+- Tela Romaneios
+- Selecionar cliente cadastrado
+- Cadastrar cliente na hora
+- Preencher Instagram e contato automaticamente quando existir
+- Múltiplos produtos no romaneio
+- Total automático
+- PDF parecido com o modelo enviado
+- Pix fixo: 41-98464-8144 — Abquella Carmo de Lima — Banco Itaú
+- Histórico/listagem de romaneios
+- Alterar, excluir, gerar PDF e enviar WhatsApp
+- Clicar no nome do cliente abre o histórico do cliente
+- Configurações agora permite upload de logo até 50MB
+- Logo usada nos PDFs
+
+Antes de usar, rode no Supabase:
+
+```txt
+supabase/v22_romaneio_logo_migration.sql
+```
+
+Observação: para upload de logo funcionar, o SQL cria o bucket público `logos` no Supabase Storage.
+
+
+## Correção V22
+
+Corrigido:
+- Tela Romaneios adicionada ao menu lateral.
+- Fluxo de caixa agora mostra botão "Baixar recibo" para lançamentos vinculados a vendas.
+- O recibo baixa em PDF 80mm com dados da loja, cliente, itens, total e forma de pagamento.
+
+
+## Correção PDF Romaneio
+
+Corrigido:
+- Valor da coluna TOTAL agora fica dentro do quadrado da tabela.
+- Descrição do produto foi limitada para não invadir as colunas de valor.
+
+
+## V23 — Responsivo para celular
+
+- Menu lateral móvel em formato de gaveta.
+- Botão para abrir e fechar o menu no celular.
+- Formulários adaptados para telas pequenas.
+- Tabelas com rolagem horizontal.
+- Cards, botões, campos e espaçamentos otimizados para toque.
+- Cabeçalho fixo no topo.
+- Login responsivo.

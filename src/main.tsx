@@ -4,13 +4,12 @@ import jsPDF from 'jspdf'
 import * as XLSX from 'xlsx'
 import {
   Banknote, BarChart3, CalendarCheck, Download, Home, LogOut, Menu, Package, PenLine,
-  Receipt, Save, Search, Settings, ShoppingCart, Trash2, UserRound, Wrench, ClipboardList
+  Receipt, FileText, Save, Search, Settings, ShoppingCart, Trash2, UserRound, Wrench, ClipboardList, X
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
-import ServiceOrdersPage from './ServiceOrdersPage'
 import './styles.css'
 
-type Page = 'dashboard' | 'caixa' | 'pdv' | 'ordens' | 'financeiro' | 'relatorios' | 'produtos' | 'clientes' | 'ordens_servico' | 'historico_cliente' | 'configuracoes'
+type Page = 'dashboard' | 'caixa' | 'pdv' | 'ordens' | 'financeiro' | 'relatorios' | 'produtos' | 'clientes' | 'romaneios' | 'ordens_servico' | 'historico_cliente' | 'configuracoes'
 
 type Product = {
   id?: string
@@ -218,6 +217,147 @@ function formatOSNumber(value: number | string | null | undefined) {
 }
 
 
+
+async function uploadStoreLogo(file: File) {
+  const user_id = await getUserId()
+  const ext = file.name.split('.').pop() || 'png'
+  const path = `${user_id}/logo-${Date.now()}.${ext}`
+
+  const { error } = await supabase.storage
+    .from('logos')
+    .upload(path, file, { upsert: true })
+
+  if (error) throw error
+
+  const { data } = supabase.storage.from('logos').getPublicUrl(path)
+  return data.publicUrl
+}
+
+async function imageUrlToDataUrl(url: string): Promise<string | null> {
+  if (!url) return null
+  try {
+    const res = await fetch(url)
+    const blob = await res.blob()
+    return await new Promise(resolve => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(String(reader.result))
+      reader.onerror = () => resolve(null)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
+
+
+async function gerarReciboVendaPorId(saleId: string) {
+  const settings = await getStoreSettings()
+
+  const { data: sale, error: saleError } = await supabase
+    .from('sales')
+    .select('*, customers(name, phone)')
+    .eq('id', saleId)
+    .maybeSingle()
+
+  if (saleError || !sale) {
+    alert('Não encontrei a venda para gerar o recibo.')
+    return
+  }
+
+  const { data: saleItems } = await supabase
+    .from('sale_items')
+    .select('*, products(name)')
+    .eq('sale_id', saleId)
+
+  const items = saleItems || []
+  const height = Math.max(120, 88 + items.length * 10)
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [80, height] })
+  let y = 7
+
+  const logo = await imageUrlToDataUrl(settings.logo_url || '')
+  if (logo) {
+    try {
+      doc.addImage(logo, 'PNG', 24, y, 32, 18)
+      y += 22
+    } catch {}
+  } else {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.text(settings.store_name || 'Bazar Eletrônicos', 40, y, { align: 'center' })
+    y += 5
+  }
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+
+  if (settings.cnpj) {
+    doc.text(`CNPJ: ${settings.cnpj}`, 40, y, { align: 'center' })
+    y += 4
+  }
+
+  if (settings.phone) {
+    doc.text(`Tel: ${settings.phone}`, 40, y, { align: 'center' })
+    y += 4
+  }
+
+  doc.text('----------------------------------------', 40, y, { align: 'center' })
+  y += 4
+
+  doc.setFont('helvetica', 'bold')
+  doc.text('RECIBO / CUPOM NÃO FISCAL', 40, y, { align: 'center' })
+  y += 5
+
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Venda: ${String(sale.id).slice(0, 8)}`, 4, y)
+  y += 4
+  doc.text(`Data: ${new Date(sale.created_at).toLocaleString('pt-BR')}`, 4, y)
+  y += 4
+  doc.text(`Cliente: ${sale.customers?.name || 'Não informado'}`, 4, y)
+  y += 5
+
+  doc.text('----------------------------------------', 40, y, { align: 'center' })
+  y += 4
+
+  items.forEach((item: any) => {
+    const totalItem = Number(item.total || (Number(item.quantity || 0) * Number(item.unit_price || 0)))
+    doc.setFont('helvetica', 'bold')
+    doc.text(String(item.products?.name || 'Produto').slice(0, 32), 4, y)
+    y += 4
+    doc.setFont('helvetica', 'normal')
+    doc.text(`${item.quantity} x ${money(item.unit_price)}`, 4, y)
+    doc.text(money(totalItem), 76, y, { align: 'right' })
+    y += 5
+  })
+
+  doc.text('----------------------------------------', 40, y, { align: 'center' })
+  y += 4
+  doc.text('Subtotal', 4, y)
+  doc.text(money(sale.subtotal || 0), 76, y, { align: 'right' })
+  y += 4
+  doc.text('Desconto', 4, y)
+  doc.text(money(sale.discount || 0), 76, y, { align: 'right' })
+  y += 4
+  doc.text('Acréscimo', 4, y)
+  doc.text(money(sale.addition || 0), 76, y, { align: 'right' })
+  y += 4
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.text('TOTAL', 4, y)
+  doc.text(money(sale.total || 0), 76, y, { align: 'right' })
+  y += 5
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.text(`Pagamento: ${sale.payment_method || '-'}`, 4, y)
+  y += 5
+  doc.text('Obrigado pela preferência!', 40, y, { align: 'center' })
+
+  doc.save(`recibo-venda-${String(sale.id).slice(0, 8)}.pdf`)
+}
+
+
 function Login() {
   const [email, setEmail] = useState('admin@loja.com')
   const [password, setPassword] = useState('123456')
@@ -231,10 +371,10 @@ function Login() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
-      <form onSubmit={signIn} className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl">
+    <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-4 sm:p-6">
+      <form onSubmit={signIn} className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-5 sm:p-8 shadow-2xl">
         <div className="h-14 w-14 rounded-2xl bg-emerald-500 flex items-center justify-center font-black text-slate-950 text-2xl">B</div>
-        <h1 className="mt-6 text-3xl font-bold">Bazar Eletrônicos</h1>
+        <h1 className="mt-6 text-2xl sm:text-3xl font-bold">Bazar Eletrônicos</h1>
         <p className="text-slate-400 mt-2">Cada login acessa sua própria loja.</p>
         <label className="label mt-8">E-mail</label>
         <input className="input" value={email} onChange={e => setEmail(e.target.value)} />
@@ -247,7 +387,21 @@ function Login() {
   )
 }
 
-function Sidebar({ page, setPage, collapsed, setCollapsed }: { page: Page, setPage: (p: Page) => void, collapsed: boolean, setCollapsed: (v: boolean) => void }) {
+function Sidebar({
+  page,
+  setPage,
+  collapsed,
+  setCollapsed,
+  mobileOpen,
+  setMobileOpen
+}: {
+  page: Page
+  setPage: (p: Page) => void
+  collapsed: boolean
+  setCollapsed: (v: boolean) => void
+  mobileOpen: boolean
+  setMobileOpen: (v: boolean) => void
+}) {
   const items = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'caixa', label: 'Caixa', icon: Banknote },
@@ -256,50 +410,124 @@ function Sidebar({ page, setPage, collapsed, setCollapsed }: { page: Page, setPa
     { id: 'financeiro', label: 'Financeiro', icon: CalendarCheck },
     { id: 'relatorios', label: 'Relatórios', icon: BarChart3 },
     { id: 'produtos', label: 'Produtos', icon: Package },
-    { id: 'clientes', label: 'Clientes', icon: UserRound, Wrench },
-    { id: 'historico_cliente', label: 'Histórico Cliente', icon: UserRound, Wrench },
+    { id: 'clientes', label: 'Clientes', icon: UserRound },
+    { id: 'historico_cliente', label: 'Histórico Cliente', icon: UserRound },
+    { id: 'romaneios', label: 'Romaneios', icon: FileText },
     { id: 'configuracoes', label: 'Configurações', icon: Settings }
   ] as const
 
   async function logout() {
+    setMobileOpen(false)
     await supabase.auth.signOut()
   }
 
+  function navigate(pageId: Page) {
+    setPage(pageId)
+    setMobileOpen(false)
+  }
+
+  const showLabels = mobileOpen || !collapsed
+
   return (
-    <aside className={`${collapsed ? 'w-20' : 'w-72'} bg-slate-950 border-r border-slate-800 p-4 hidden lg:flex flex-col transition-all duration-200`}>
-      <div className="flex items-center justify-between gap-3 px-2 py-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="h-11 w-11 rounded-xl bg-emerald-500 text-slate-950 font-black flex items-center justify-center shrink-0">B</div>
-          {!collapsed && <div><strong>Bazar ERP</strong><p className="text-xs text-slate-400">V19 ordens de serviço</p></div>}
+    <>
+      {mobileOpen && (
+        <button
+          type="button"
+          aria-label="Fechar menu"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[1px] lg:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-50 flex w-[86vw] max-w-72 -translate-x-full flex-col
+          border-r border-slate-800 bg-slate-950 p-4 shadow-2xl transition-all duration-200
+          ${mobileOpen ? 'translate-x-0' : ''}
+          lg:static lg:z-auto lg:max-w-none lg:translate-x-0 lg:shadow-none
+          ${collapsed ? 'lg:w-20' : 'lg:w-72'}
+        `}
+      >
+        <div className="flex items-center justify-between gap-3 px-1 py-3 sm:px-2 sm:py-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-2xl font-black text-slate-950">
+              B
+            </div>
+
+            {showLabels && (
+              <div className="min-w-0">
+                <strong className="block truncate">Bazar ERP</strong>
+                <p className="truncate text-xs text-slate-400">V23 responsivo mobile</p>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-900 lg:hidden"
+            title="Fechar menu"
+          >
+            <X size={19} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setCollapsed(!collapsed)}
+            className="hidden rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-900 lg:inline-flex"
+            title={collapsed ? 'Mostrar menu' : 'Ocultar menu'}
+          >
+            <Menu size={18} />
+          </button>
         </div>
 
-        <button type="button" onClick={() => setCollapsed(!collapsed)} className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-900" title={collapsed ? 'Mostrar menu' : 'Ocultar menu'}>
-          <Menu size={18} />
+        <nav className="mt-3 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-1">
+          {items.map(item => {
+            const Icon = item.icon
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => navigate(item.id as Page)}
+                className={`nav ${collapsed ? 'lg:justify-center lg:px-2' : ''} ${page === item.id ? 'nav-active' : ''}`}
+                title={item.label}
+              >
+                <Icon size={19} className="shrink-0" />
+                {showLabels && <span className="truncate">{item.label}</span>}
+              </button>
+            )
+          })}
+        </nav>
+
+        <button
+          type="button"
+          onClick={logout}
+          className={`nav mt-3 text-red-300 ${collapsed ? 'lg:justify-center lg:px-2' : ''}`}
+          title="Sair"
+        >
+          <LogOut size={19} className="shrink-0" />
+          {showLabels && <span>Sair</span>}
         </button>
-      </div>
-
-      <nav className="mt-4 space-y-1 flex-1 overflow-auto">
-        {items.map(item => {
-          const Icon = item.icon
-          return (
-            <button key={item.id} onClick={() => setPage(item.id as Page)} className={`nav ${collapsed ? 'justify-center px-2' : ''} ${page === item.id ? 'nav-active' : ''}`} title={item.label}>
-              <Icon size={18}/>
-              {!collapsed && item.label}
-            </button>
-          )
-        })}
-      </nav>
-
-      <button onClick={logout} className={`nav text-red-300 ${collapsed ? 'justify-center px-2' : ''}`} title="Sair">
-        <LogOut size={18}/>
-        {!collapsed && 'Sair'}
-      </button>
-    </aside>
+      </aside>
+    </>
   )
 }
 
-function Header({ title }: { title: string }) {
-  return <header className="border-b border-slate-800 bg-slate-900/60 px-6 py-4"><h2 className="text-xl font-bold">{title}</h2></header>
+function Header({ title, onOpenMenu }: { title: string; onOpenMenu: () => void }) {
+  return (
+    <header className="sticky top-0 z-30 flex min-h-16 items-center gap-3 border-b border-slate-800 bg-slate-900/95 px-3 py-3 backdrop-blur sm:px-4 lg:px-6">
+      <button
+        type="button"
+        onClick={onOpenMenu}
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-700 text-slate-200 hover:bg-slate-800 lg:hidden"
+        aria-label="Abrir menu"
+      >
+        <Menu size={21} />
+      </button>
+
+      <h2 className="min-w-0 truncate text-lg font-bold sm:text-xl">{title}</h2>
+    </header>
+  )
 }
 
 function Card({ title, value, icon: Icon }: { title: string, value: string, icon: any }) {
@@ -683,6 +911,7 @@ function CashPage() {
               <th>Tipo</th>
               <th>Forma</th>
               <th>Valor</th>
+              <th>Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -693,6 +922,13 @@ function CashPage() {
                 <td>{e.type}</td>
                 <td>{e.payment_method}</td>
                 <td>{money(e.amount)}</td>
+                <td>
+                  {e.sale_id ? (
+                    <button className="btn2" onClick={() => gerarReciboVendaPorId(e.sale_id)}>Baixar recibo</button>
+                  ) : (
+                    <span className="text-slate-500">-</span>
+                  )}
+                </td>
               </tr>
             ))}
             {!entries.length && <tr><td colSpan={5} className="text-slate-500">Nenhum lançamento no período.</td></tr>}
@@ -704,18 +940,30 @@ function CashPage() {
 }
 
 
+
 function FinancePage() {
   const [month, setMonth] = useState(currentMonth())
   const [entries, setEntries] = useState<any[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [message, setMessage] = useState('')
+  const [form, setForm] = useState<any>({
+    description: '',
+    type: 'entrada',
+    payment_method: 'Dinheiro',
+    amount: '',
+    due_date: '',
+    paid_at: ''
+  })
 
   async function load() {
     const user_id = await getUserId()
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('financial_entries')
       .select('*, customers(name), suppliers(name)')
       .eq('user_id', user_id)
       .order('created_at', { ascending: false })
 
+    if (error) setMessage(error.message)
     setEntries(data || [])
   }
 
@@ -744,9 +992,86 @@ function FinancePage() {
 
   const maxBar = Math.max(1, ...days.map(d => Math.max(d.entradas, d.saidas)))
 
-  async function pay(entry: any) {
-    await supabase.from('financial_entries').update({ paid_at: new Date().toISOString() }).eq('id', entry.id)
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    const user_id = await getUserId()
+
+    const payload: any = {
+      user_id,
+      description: form.description,
+      type: form.type,
+      payment_method: form.payment_method,
+      amount: Number(form.amount || 0),
+      due_date: form.due_date || null,
+      paid_at: form.paid_at ? new Date(form.paid_at).toISOString() : null
+    }
+
+    if (editingId) {
+      const { error } = await supabase
+        .from('financial_entries')
+        .update(payload)
+        .eq('id', editingId)
+        .eq('user_id', user_id)
+
+      if (error) return setMessage(error.message)
+      setMessage('Lançamento financeiro alterado com sucesso.')
+    } else {
+      const { error } = await supabase
+        .from('financial_entries')
+        .insert(payload)
+
+      if (error) return setMessage(error.message)
+      setMessage('Lançamento financeiro adicionado com sucesso.')
+    }
+
+    setEditingId(null)
+    setForm({ description: '', type: 'entrada', payment_method: 'Dinheiro', amount: '', due_date: '', paid_at: '' })
     await load()
+  }
+
+  function edit(entry: any) {
+    setEditingId(entry.id)
+    setForm({
+      description: entry.description || '',
+      type: entry.type || 'entrada',
+      payment_method: entry.payment_method || 'Dinheiro',
+      amount: String(entry.amount || ''),
+      due_date: entry.due_date || '',
+      paid_at: entry.paid_at ? String(entry.paid_at).slice(0, 10) : ''
+    })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  async function remove(entry: any) {
+    if (!confirm('Deseja excluir este lançamento financeiro?')) return
+
+    const user_id = await getUserId()
+    const { error } = await supabase
+      .from('financial_entries')
+      .delete()
+      .eq('id', entry.id)
+      .eq('user_id', user_id)
+
+    if (error) return setMessage(error.message)
+    setMessage('Lançamento financeiro excluído.')
+    await load()
+  }
+
+  async function pay(entry: any) {
+    const user_id = await getUserId()
+    await supabase
+      .from('financial_entries')
+      .update({ paid_at: new Date().toISOString() })
+      .eq('id', entry.id)
+      .eq('user_id', user_id)
+
+    await load()
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setForm({ description: '', type: 'entrada', payment_method: 'Dinheiro', amount: '', due_date: '', paid_at: '' })
+    setMessage('')
   }
 
   return (
@@ -758,12 +1083,69 @@ function FinancePage() {
         <Card title="Saldo previsto" value={money(saldoPrevisto)} icon={BarChart3} />
       </div>
 
+      <form onSubmit={save} className="panel">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h3>{editingId ? 'Alterar lançamento financeiro' : 'Adicionar lançamento financeiro'}</h3>
+          {editingId && <button type="button" className="btn2" onClick={cancelEdit}>Cancelar edição</button>}
+        </div>
+
+        <div className="grid md:grid-cols-6 gap-3">
+          <div className="md:col-span-2">
+            <label className="label">Descrição</label>
+            <input className="input" placeholder="Ex: Pagamento fornecedor" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} required />
+          </div>
+
+          <div>
+            <label className="label">Tipo</label>
+            <select className="input" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+              <option value="entrada">Entrada</option>
+              <option value="saida">Saída</option>
+              <option value="receber">A receber</option>
+              <option value="pagar">A pagar</option>
+              <option value="sangria">Sangria</option>
+              <option value="suprimento">Suprimento</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="label">Forma</label>
+            <select className="input" value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}>
+              <option>Dinheiro</option>
+              <option>Pix</option>
+              <option>Cartão débito</option>
+              <option>Cartão crédito</option>
+              <option>Fiado</option>
+              <option>Boleto</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="label">Valor</label>
+            <input className="input" type="number" step="0.01" placeholder="Ex: 100.00" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} required />
+          </div>
+
+          <div>
+            <label className="label">Vencimento</label>
+            <input className="input" type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} />
+          </div>
+
+          <div>
+            <label className="label">Data de pagamento</label>
+            <input className="input" type="date" value={form.paid_at} onChange={e => setForm({ ...form, paid_at: e.target.value })} />
+          </div>
+        </div>
+
+        <button className="btn mt-4">{editingId ? 'Salvar alterações' : 'Adicionar lançamento'}</button>
+        {message && <p className="mini mt-4">{message}</p>}
+      </form>
+
       <section className="panel">
         <h3>Gráfico de Fluxo de Caixa</h3>
         <div className="mb-4 w-64">
           <label className="label">Mês</label>
           <input className="input" type="month" value={month} onChange={e => setMonth(e.target.value)} />
         </div>
+
         <div className="space-y-3">
           {days.map(d => (
             <div key={d.date} className="grid grid-cols-12 gap-2 items-center text-xs">
@@ -779,28 +1161,45 @@ function FinancePage() {
             </div>
           ))}
         </div>
-        <p className="text-xs text-slate-500 mt-4">Verde = entradas. Vermelho = saídas.</p>
       </section>
 
       <section className="panel">
-        <h3>Lançamentos financeiros</h3>
-        <table className="w-full text-sm">
-          <thead><tr><th>Data</th><th>Descrição</th><th>Tipo</th><th>Forma</th><th>Cliente/Fornecedor</th><th>Valor</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            {monthEntries.map(e => (
-              <tr key={e.id}>
-                <td>{new Date(e.created_at).toLocaleString('pt-BR')}</td>
-                <td>{e.description}</td>
-                <td>{e.type}</td>
-                <td>{e.payment_method}</td>
-                <td>{e.customers?.name || e.suppliers?.name || '-'}</td>
-                <td>{money(e.amount)}</td>
-                <td>{e.paid_at ? <span className="tag-green">Pago</span> : <span className="tag-yellow">Aberto</span>}</td>
-                <td>{!e.paid_at && <button className="btn2" onClick={() => pay(e)}>Baixar</button>}</td>
+        <h3>Consultar lançamentos financeiros</h3>
+        <div className="overflow-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Descrição</th>
+                <th>Tipo</th>
+                <th>Forma</th>
+                <th>Cliente/Fornecedor</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>Ações</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {monthEntries.map(e => (
+                <tr key={e.id}>
+                  <td>{new Date(e.created_at).toLocaleString('pt-BR')}</td>
+                  <td>{e.description}</td>
+                  <td>{e.type}</td>
+                  <td>{e.payment_method || '-'}</td>
+                  <td>{e.customers?.name || e.suppliers?.name || '-'}</td>
+                  <td>{money(e.amount)}</td>
+                  <td>{e.paid_at ? <span className="tag-green">Pago</span> : <span className="tag-yellow">Aberto</span>}</td>
+                  <td className="space-x-2 whitespace-nowrap">
+                    {!e.paid_at && <button className="btn2" onClick={() => pay(e)}>Baixar</button>}
+                    <button className="btn2" onClick={() => edit(e)}>Alterar</button>
+                    <button className="btn-danger" onClick={() => remove(e)}>Excluir</button>
+                  </td>
+                </tr>
+              ))}
+              {!monthEntries.length && <tr><td colSpan={8} className="text-slate-500">Nenhum lançamento no mês.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   )
@@ -1266,14 +1665,22 @@ function PDVPage() {
   )
 }
 
+
 function ProductsPage() {
   const [items, setItems] = useState<Product[]>([])
   const [form, setForm] = useState<Product>(emptyProduct)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [message, setMessage] = useState('')
 
   async function load() {
     const user_id = await getUserId()
-    const { data } = await supabase.from('products').select('*').eq('user_id', user_id).order('created_at', { ascending: false })
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false })
+
+    if (error) setMessage(error.message)
     setItems(data || [])
   }
 
@@ -1282,55 +1689,182 @@ function ProductsPage() {
   async function save(e: React.FormEvent) {
     e.preventDefault()
     const user_id = await getUserId()
-    if (editingId) await supabase.from('products').update(form).eq('id', editingId).eq('user_id', user_id)
-    else await supabase.from('products').insert({ ...form, user_id })
+
+    const payload = {
+      ...form,
+      user_id,
+      cost_price: Number(form.cost_price || 0),
+      sale_price: Number(form.sale_price || 0),
+      stock: Number(form.stock || 0),
+      min_stock: Number(form.min_stock || 0)
+    }
+
+    if (editingId) {
+      const { error } = await supabase
+        .from('products')
+        .update(payload)
+        .eq('id', editingId)
+        .eq('user_id', user_id)
+
+      if (error) return setMessage(error.message)
+      setMessage('Produto alterado com sucesso.')
+    } else {
+      const { error } = await supabase.from('products').insert(payload)
+      if (error) return setMessage(error.message)
+      setMessage('Produto adicionado com sucesso.')
+    }
+
     setForm(emptyProduct)
     setEditingId(null)
     await load()
   }
 
+  function edit(item: Product) {
+    setEditingId(item.id || null)
+    setForm({
+      ...emptyProduct,
+      ...item,
+      cost_price: Number(item.cost_price || 0),
+      sale_price: Number(item.sale_price || 0),
+      stock: Number(item.stock || 0),
+      min_stock: Number(item.min_stock || 0)
+    })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   async function remove(id?: string) {
     if (!id) return
+    if (!confirm('Deseja excluir este produto?')) return
+
     const user_id = await getUserId()
-    await supabase.from('products').delete().eq('id', id).eq('user_id', user_id)
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user_id)
+
+    if (error) return setMessage(error.message)
+    setMessage('Produto excluído.')
     await load()
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setForm(emptyProduct)
+    setMessage('')
   }
 
   return (
     <div className="space-y-4">
       <form onSubmit={save} className="panel">
-        <h3>Produto</h3>
-        <div className="grid md:grid-cols-4 gap-3">
-          <div><label className="label">Nome do produto</label><input className="input" placeholder="Ex: Fone Bluetooth X10" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /></div>
-          <div><label className="label">Código do produto</label><input className="input" placeholder="Ex: PROD-001" value={form.product_code || ''} onChange={e => setForm({ ...form, product_code: e.target.value })} /></div>
-          <div><label className="label">Código de barras</label><input className="input" placeholder="Ex: 789100000001" value={form.barcode || ''} onChange={e => setForm({ ...form, barcode: e.target.value })} /></div>
-          <div><label className="label">Marca</label><input className="input" placeholder="Ex: JBL, Samsung, Genérico" value={form.brand || ''} onChange={e => setForm({ ...form, brand: e.target.value })} /></div>
-          <div><label className="label">Quantidade</label><input className="input" type="number" placeholder="Ex: 10" value={form.stock || ''} onChange={e => setForm({ ...form, stock: Number(e.target.value || 0) })} /></div>
-          <div><label className="label">Valor pago</label><input className="input" type="number" step="0.01" placeholder="Ex: 25.00" value={form.cost_price || ''} onChange={e => setForm({ ...form, cost_price: Number(e.target.value || 0) })} /></div>
-          <div><label className="label">Valor final</label><input className="input" type="number" step="0.01" placeholder="Ex: 49.90" value={form.sale_price || ''} onChange={e => setForm({ ...form, sale_price: Number(e.target.value || 0) })} /></div>
-          <div><label className="label">Estoque mínimo</label><input className="input" type="number" placeholder="Ex: 3" value={form.min_stock || ''} onChange={e => setForm({ ...form, min_stock: Number(e.target.value || 0) })} /></div>
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h3>{editingId ? 'Alterar produto' : 'Adicionar produto'}</h3>
+          {editingId && <button type="button" className="btn2" onClick={cancelEdit}>Cancelar edição</button>}
         </div>
-        <button className="btn mt-4"><Save size={16} className="inline mr-2"/>Salvar produto</button>
+
+        <div className="grid md:grid-cols-4 gap-3">
+          <div>
+            <label className="label">Nome do produto</label>
+            <input className="input" placeholder="Ex: Fone Bluetooth X10" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
+          </div>
+
+          <div>
+            <label className="label">Código do produto</label>
+            <input className="input" placeholder="Ex: PROD-001" value={form.product_code || ''} onChange={e => setForm({ ...form, product_code: e.target.value })} />
+          </div>
+
+          <div>
+            <label className="label">Código de barras</label>
+            <input className="input" placeholder="Ex: 789100000001" value={form.barcode || ''} onChange={e => setForm({ ...form, barcode: e.target.value })} />
+          </div>
+
+          <div>
+            <label className="label">Marca</label>
+            <input className="input" placeholder="Ex: JBL, Samsung, Genérico" value={form.brand || ''} onChange={e => setForm({ ...form, brand: e.target.value })} />
+          </div>
+
+          <div>
+            <label className="label">Quantidade</label>
+            <input className="input" type="number" placeholder="Ex: 10" value={form.stock || ''} onChange={e => setForm({ ...form, stock: Number(e.target.value || 0) })} />
+          </div>
+
+          <div>
+            <label className="label">Valor pago</label>
+            <input className="input" type="number" step="0.01" placeholder="Ex: 25.00" value={form.cost_price || ''} onChange={e => setForm({ ...form, cost_price: Number(e.target.value || 0) })} />
+          </div>
+
+          <div>
+            <label className="label">Valor final</label>
+            <input className="input" type="number" step="0.01" placeholder="Ex: 49.90" value={form.sale_price || ''} onChange={e => setForm({ ...form, sale_price: Number(e.target.value || 0) })} />
+          </div>
+
+          <div>
+            <label className="label">Estoque mínimo</label>
+            <input className="input" type="number" placeholder="Ex: 3" value={form.min_stock || ''} onChange={e => setForm({ ...form, min_stock: Number(e.target.value || 0) })} />
+          </div>
+        </div>
+
+        <button className="btn mt-4">{editingId ? 'Salvar alterações' : 'Adicionar produto'}</button>
+        {message && <p className="mini mt-4">{message}</p>}
       </form>
 
       <section className="panel">
-        <h3>Lista de produtos</h3>
-        <table className="w-full text-sm">
-          <thead><tr><th>Produto</th><th>Cód.</th><th>Barras</th><th>Qtd</th><th>Pago</th><th>Final</th><th>Marca</th><th></th></tr></thead>
-          <tbody>{items.map(p => <tr key={p.id}><td>{p.name}</td><td>{p.product_code}</td><td>{p.barcode}</td><td>{p.stock}</td><td>{money(p.cost_price)}</td><td>{money(p.sale_price)}</td><td>{p.brand}</td><td className="space-x-2"><button className="btn2" onClick={() => { setEditingId(p.id || null); setForm(p) }}>Editar</button><button className="btn-danger" onClick={() => remove(p.id)}>Excluir</button></td></tr>)}</tbody>
-        </table>
+        <h3>Consultar produtos</h3>
+        <div className="overflow-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                <th>Produto</th>
+                <th>Código</th>
+                <th>Barras</th>
+                <th>Qtd</th>
+                <th>Pago</th>
+                <th>Final</th>
+                <th>Marca</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(p => (
+                <tr key={p.id}>
+                  <td>{p.name}</td>
+                  <td>{p.product_code || '-'}</td>
+                  <td>{p.barcode || '-'}</td>
+                  <td>{p.stock}</td>
+                  <td>{money(p.cost_price)}</td>
+                  <td>{money(p.sale_price)}</td>
+                  <td>{p.brand || '-'}</td>
+                  <td className="space-x-2 whitespace-nowrap">
+                    <button className="btn2" onClick={() => edit(p)}>Alterar</button>
+                    <button className="btn-danger" onClick={() => remove(p.id)}>Excluir</button>
+                  </td>
+                </tr>
+              ))}
+              {!items.length && <tr><td colSpan={8} className="text-slate-500">Nenhum produto cadastrado.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   )
 }
 
+
 function CustomersPage() {
   const [items, setItems] = useState<Customer[]>([])
   const [form, setForm] = useState<Customer>(emptyCustomer)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [message, setMessage] = useState('')
 
   async function load() {
     const user_id = await getUserId()
-    const { data } = await supabase.from('customers').select('*').eq('user_id', user_id).order('created_at', { ascending: false })
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false })
+
+    if (error) setMessage(error.message)
     setItems(data || [])
   }
 
@@ -1339,39 +1873,145 @@ function CustomersPage() {
   async function save(e: React.FormEvent) {
     e.preventDefault()
     const user_id = await getUserId()
-    await supabase.from('customers').insert({ ...form, user_id })
+    const payload = { ...form, user_id }
+
+    if (editingId) {
+      const { error } = await supabase
+        .from('customers')
+        .update(payload)
+        .eq('id', editingId)
+        .eq('user_id', user_id)
+
+      if (error) return setMessage(error.message)
+      setMessage('Cliente alterado com sucesso.')
+    } else {
+      const { error } = await supabase.from('customers').insert(payload)
+      if (error) return setMessage(error.message)
+      setMessage('Cliente adicionado com sucesso.')
+    }
+
     setForm(emptyCustomer)
+    setEditingId(null)
     await load()
+  }
+
+  function edit(item: Customer) {
+    setEditingId(item.id || null)
+    setForm({ ...emptyCustomer, ...item })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  async function remove(id?: string) {
+    if (!id) return
+    if (!confirm('Deseja excluir este cliente?')) return
+
+    const user_id = await getUserId()
+    const { error } = await supabase
+      .from('customers')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', user_id)
+
+    if (error) return setMessage(error.message)
+    setMessage('Cliente excluído.')
+    await load()
+  }
+
+  function openWhatsApp(customer: Customer) {
+    const raw = String(customer.phone || '').replace(/\D/g, '')
+    if (!raw) return alert('Cliente sem contato/WhatsApp.')
+    const phone = raw.startsWith('55') ? raw : `55${raw}`
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(`Olá ${customer.name}, tudo bem?`)}`, '_blank')
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setForm(emptyCustomer)
+    setMessage('')
   }
 
   return (
     <div className="space-y-4">
       <form onSubmit={save} className="panel">
-        <h3>Cliente</h3>
-        <div className="grid md:grid-cols-3 gap-3">
-          <input className="input" placeholder="Nome" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
-          <input className="input" placeholder="CPF" value={form.document || ''} onChange={e => setForm({ ...form, document: e.target.value })} />
-          <input className="input" placeholder="Contato" value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} />
-          <input className="input" placeholder="Endereço" value={form.address || ''} onChange={e => setForm({ ...form, address: e.target.value })} />
-          <input className="input md:col-span-2" placeholder="Obs" value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h3>{editingId ? 'Alterar cliente' : 'Adicionar cliente'}</h3>
+          {editingId && <button type="button" className="btn2" onClick={cancelEdit}>Cancelar edição</button>}
         </div>
-        <button className="btn mt-4">Salvar</button>
+
+        <div className="grid md:grid-cols-3 gap-3">
+          <div>
+            <label className="label">Nome</label>
+            <input className="input" placeholder="Nome do cliente" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
+          </div>
+
+          <div>
+            <label className="label">CPF/CNPJ</label>
+            <input className="input" placeholder="CPF ou CNPJ" value={form.document || ''} onChange={e => setForm({ ...form, document: e.target.value })} />
+          </div>
+
+          <div>
+            <label className="label">Contato / WhatsApp</label>
+            <input className="input" placeholder="(41) 99999-9999" value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} />
+          </div>
+
+          <div>
+            <label className="label">Endereço</label>
+            <input className="input" placeholder="Endereço" value={form.address || ''} onChange={e => setForm({ ...form, address: e.target.value })} />
+          </div>
+
+          <div className="md:col-span-2">
+            <label className="label">Observações</label>
+            <input className="input" placeholder="Observações" value={form.notes || ''} onChange={e => setForm({ ...form, notes: e.target.value })} />
+          </div>
+        </div>
+
+        <button className="btn mt-4">{editingId ? 'Salvar alterações' : 'Adicionar cliente'}</button>
+        {message && <p className="mini mt-4">{message}</p>}
       </form>
 
       <section className="panel">
-        <h3>Lista de clientes</h3>
-        <table className="w-full text-sm">
-          <thead><tr><th>Nome</th><th>CPF</th><th>Contato</th><th>Endereço</th><th>Obs</th></tr></thead>
-          <tbody>{items.map(c => <tr key={c.id}><td>{c.name}</td><td>{c.document}</td><td>{c.phone}</td><td>{c.address}</td><td>{c.notes}</td></tr>)}</tbody>
-        </table>
+        <h3>Consultar clientes</h3>
+        <div className="overflow-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>CPF/CNPJ</th>
+                <th>Contato</th>
+                <th>Endereço</th>
+                <th>Obs</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map(c => (
+                <tr key={c.id}>
+                  <td>{c.name}</td>
+                  <td>{c.document || '-'}</td>
+                  <td>{c.phone || '-'}</td>
+                  <td>{c.address || '-'}</td>
+                  <td>{c.notes || '-'}</td>
+                  <td className="space-x-2 whitespace-nowrap">
+                    <button className="btn2" onClick={() => openWhatsApp(c)}>WhatsApp</button>
+                    <button className="btn2" onClick={() => edit(c)}>Alterar</button>
+                    <button className="btn-danger" onClick={() => remove(c.id)}>Excluir</button>
+                  </td>
+                </tr>
+              ))}
+              {!items.length && <tr><td colSpan={6} className="text-slate-500">Nenhum cliente cadastrado.</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   )
 }
 
+
 function SettingsPage() {
   const [form, setForm] = useState<any>({ store_name: '', cnpj: '', phone: '', address: '', logo_url: '', theme: 'dark' })
   const [saved, setSaved] = useState(false)
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -1381,34 +2021,73 @@ function SettingsPage() {
     load()
   }, [])
 
+  async function handleLogoUpload(file?: File) {
+    if (!file) return
+    if (file.size > 50 * 1024 * 1024) {
+      alert('A logo pode ter no máximo 50MB.')
+      return
+    }
+
+    setUploading(true)
+    try {
+      const url = await uploadStoreLogo(file)
+      setForm({ ...form, logo_url: url })
+    } catch (err: any) {
+      alert(err.message || 'Erro ao enviar logo.')
+    }
+    setUploading(false)
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault()
     const user_id = await getUserId()
-    if (form.id) await supabase.from('store_settings').update(form).eq('id', form.id).eq('user_id', user_id)
-    else {
+
+    if (form.id) {
+      await supabase.from('store_settings').update(form).eq('id', form.id).eq('user_id', user_id)
+    } else {
       const { data } = await supabase.from('store_settings').insert({ ...form, user_id }).select().single()
       if (data) setForm(data)
     }
+
     setSaved(true)
   }
 
   return (
     <form onSubmit={save} className="panel">
       <h3>Configurações da loja</h3>
+
       <div className="grid md:grid-cols-2 gap-4">
         <input className="input" placeholder="Nome da loja" value={form.store_name || ''} onChange={e => setForm({ ...form, store_name: e.target.value })} />
         <input className="input" placeholder="CNPJ" value={form.cnpj || ''} onChange={e => setForm({ ...form, cnpj: e.target.value })} />
         <input className="input" placeholder="Telefone" value={form.phone || ''} onChange={e => setForm({ ...form, phone: e.target.value })} />
         <input className="input" placeholder="Endereço" value={form.address || ''} onChange={e => setForm({ ...form, address: e.target.value })} />
-        <input className="input" placeholder="Logo URL" value={form.logo_url || ''} onChange={e => setForm({ ...form, logo_url: e.target.value })} />
-        <select className="input" value={form.theme || 'dark'} onChange={e => setForm({ ...form, theme: e.target.value })}><option value="dark">Tema escuro</option><option value="light">Tema claro</option></select>
+
+        <div className="md:col-span-2">
+          <label className="label">Logo da empresa</label>
+          <p className="text-sm text-slate-400 mb-2">
+            Envie a logo da loja. O arquivo pode ter até 50MB. Esta imagem será usada nos PDFs gerados pelo sistema, como romaneio e ordem de serviço.
+          </p>
+          <input className="input" type="file" accept="image/*" onChange={e => handleLogoUpload(e.target.files?.[0])} />
+          {uploading && <p className="text-sm text-emerald-300 mt-2">Enviando logo...</p>}
+          {form.logo_url && (
+            <div className="mt-3 flex items-center gap-4">
+              <img src={form.logo_url} alt="Logo" className="h-20 rounded-xl border border-slate-700 bg-white p-2" />
+              <input className="input" value={form.logo_url || ''} onChange={e => setForm({ ...form, logo_url: e.target.value })} />
+            </div>
+          )}
+        </div>
+
+        <select className="input" value={form.theme || 'dark'} onChange={e => setForm({ ...form, theme: e.target.value })}>
+          <option value="dark">Tema escuro</option>
+          <option value="light">Tema claro</option>
+        </select>
       </div>
+
       <button className="btn mt-4">Salvar</button>
       {saved && <p className="mt-3 text-sm text-emerald-300">Salvo.</p>}
     </form>
   )
 }
-
 
 function CustomerHistoryPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -2158,10 +2837,544 @@ function ServiceOrdersPage() {
   )
 }
 
+
+type RomaneioItem = {
+  product_id: string
+  description: string
+  quantity: number
+  unit_price: number
+}
+
+function RomaneiosPage({ setPageFromRomaneio }: { setPageFromRomaneio?: (p: Page) => void }) {
+  const [romaneios, setRomaneios] = useState<any[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [message, setMessage] = useState('')
+  const [search, setSearch] = useState('')
+
+  const emptyForm = {
+    customer_id: '',
+    customer_name: '',
+    instagram: '',
+    whatsapp: '',
+    purchase_date: today(),
+    payment_status: 'Pendente',
+    delivery_status: 'Pendente',
+    payment_method: 'Pix',
+    notes: ''
+  }
+
+  const [form, setForm] = useState<any>(emptyForm)
+  const [items, setItems] = useState<RomaneioItem[]>([{ product_id: '', description: '', quantity: 1, unit_price: 0 }])
+
+  async function load() {
+    const user_id = await getUserId()
+
+    const { data: cs } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('user_id', user_id)
+      .order('name')
+    setCustomers(cs || [])
+
+    const { data: ps } = await supabase
+      .from('products')
+      .select('*')
+      .eq('user_id', user_id)
+      .order('name')
+    setProducts(ps || [])
+
+    const { data: rs, error } = await supabase
+      .from('romaneios')
+      .select('*, customers(name, phone)')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false })
+
+    if (error) setMessage(error.message)
+    setRomaneios(rs || [])
+  }
+
+  useEffect(() => { load() }, [])
+
+  const total = items.reduce((acc, item) => acc + Number(item.quantity || 0) * Number(item.unit_price || 0), 0)
+
+  function selectCustomer(customerId: string) {
+    const c: any = customers.find(x => x.id === customerId)
+    setForm({
+      ...form,
+      customer_id: customerId,
+      customer_name: c?.name || '',
+      instagram: c?.instagram || c?.notes?.match(/@[\w._-]+/)?.[0] || form.instagram,
+      whatsapp: c?.phone || form.whatsapp
+    })
+  }
+
+  async function createQuickCustomer() {
+    if (!form.customer_name) {
+      alert('Digite o nome do cliente antes de cadastrar.')
+      return
+    }
+
+    const user_id = await getUserId()
+    const { data, error } = await supabase
+      .from('customers')
+      .insert({
+        user_id,
+        name: form.customer_name,
+        phone: form.whatsapp,
+        notes: form.instagram ? `Instagram: ${form.instagram}` : ''
+      })
+      .select()
+      .single()
+
+    if (error) return setMessage(error.message)
+
+    setForm({ ...form, customer_id: data.id })
+    await load()
+    setMessage('Cliente cadastrado e selecionado.')
+  }
+
+  function updateItem(index: number, data: Partial<RomaneioItem>) {
+    setItems(current => current.map((item, i) => i === index ? { ...item, ...data } : item))
+  }
+
+  function selectProduct(index: number, productId: string) {
+    const p = products.find(x => x.id === productId)
+    updateItem(index, {
+      product_id: productId,
+      description: p?.name || '',
+      unit_price: Number(p?.sale_price || 0)
+    })
+  }
+
+  function addItem() {
+    setItems(current => [...current, { product_id: '', description: '', quantity: 1, unit_price: 0 }])
+  }
+
+  function removeItem(index: number) {
+    setItems(current => current.length === 1 ? current : current.filter((_, i) => i !== index))
+  }
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    const user_id = await getUserId()
+
+    const payload = {
+      user_id,
+      customer_id: form.customer_id || null,
+      customer_name: form.customer_name,
+      instagram: form.instagram,
+      whatsapp: form.whatsapp,
+      purchase_date: form.purchase_date || today(),
+      payment_status: form.payment_status,
+      delivery_status: form.delivery_status,
+      payment_method: form.payment_method,
+      notes: form.notes,
+      total,
+      items
+    }
+
+    let saved: any = null
+
+    if (editingId) {
+      const { data, error } = await supabase
+        .from('romaneios')
+        .update(payload)
+        .eq('id', editingId)
+        .eq('user_id', user_id)
+        .select()
+        .single()
+
+      if (error) return setMessage(error.message)
+      saved = data
+    } else {
+      const { data, error } = await supabase
+        .from('romaneios')
+        .insert(payload)
+        .select()
+        .single()
+
+      if (error) return setMessage(error.message)
+      saved = data
+    }
+
+    await supabase
+      .from('financial_entries')
+      .delete()
+      .eq('user_id', user_id)
+      .eq('romaneio_id', saved.id)
+
+    await supabase.from('financial_entries').insert({
+      user_id,
+      customer_id: form.customer_id || null,
+      romaneio_id: saved.id,
+      description: `Romaneio ${saved.romaneio_number ? String(saved.romaneio_number).padStart(6, '0') : saved.id.slice(0, 8)}`,
+      type: form.payment_status === 'Pago' ? 'entrada' : 'receber',
+      payment_method: form.payment_method,
+      amount: total,
+      due_date: form.payment_status === 'Pago' ? null : form.purchase_date,
+      paid_at: form.payment_status === 'Pago' ? new Date().toISOString() : null
+    })
+
+    setEditingId(null)
+    setForm(emptyForm)
+    setItems([{ product_id: '', description: '', quantity: 1, unit_price: 0 }])
+    setMessage(editingId ? 'Romaneio alterado com sucesso.' : 'Romaneio criado com sucesso.')
+    await load()
+  }
+
+  function editRomaneio(r: any) {
+    setEditingId(r.id)
+    setForm({
+      customer_id: r.customer_id || '',
+      customer_name: r.customer_name || r.customers?.name || '',
+      instagram: r.instagram || '',
+      whatsapp: r.whatsapp || r.customers?.phone || '',
+      purchase_date: r.purchase_date || today(),
+      payment_status: r.payment_status || 'Pendente',
+      delivery_status: r.delivery_status || 'Pendente',
+      payment_method: r.payment_method || 'Pix',
+      notes: r.notes || ''
+    })
+    setItems(Array.isArray(r.items) && r.items.length ? r.items : [{ product_id: '', description: '', quantity: 1, unit_price: 0 }])
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  async function deleteRomaneio(r: any) {
+    if (!confirm('Deseja excluir este romaneio?')) return
+    const user_id = await getUserId()
+
+    await supabase.from('financial_entries').delete().eq('user_id', user_id).eq('romaneio_id', r.id)
+
+    const { error } = await supabase
+      .from('romaneios')
+      .delete()
+      .eq('id', r.id)
+      .eq('user_id', user_id)
+
+    if (error) return setMessage(error.message)
+    setMessage('Romaneio excluído.')
+    await load()
+  }
+
+  async function generatePDF(r: any) {
+    const settings = await getStoreSettings()
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const pageW = doc.internal.pageSize.getWidth()
+    let y = 14
+
+    const logo = await imageUrlToDataUrl(settings.logo_url || '')
+    if (logo) {
+      try { doc.addImage(logo, 'PNG', 82, y, 46, 25) } catch {}
+      y += 30
+    } else {
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(18)
+      doc.text(settings.store_name || 'HOMEshop', pageW / 2, y + 8, { align: 'center' })
+      y += 18
+    }
+
+    doc.setFillColor(239, 239, 239)
+    doc.rect(14, y, pageW - 28, 28, 'F')
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'bold')
+    doc.text(`NOME: ${r.customer_name || r.customers?.name || '-'}`, 18, y + 8)
+    doc.text(`INSTAGRAM: ${r.instagram || '-'}`, 18, y + 16)
+    doc.text(`CONTATO: ${r.whatsapp || '-'}`, 18, y + 24)
+    doc.text(`DATA: ${brDate(r.purchase_date || r.created_at)}`, pageW - 18, y + 8, { align: 'right' })
+    y += 34
+
+    const colX = [14, 34, 123, 153, 181]
+    doc.setDrawColor(100)
+    doc.setFillColor(248, 248, 248)
+    doc.rect(14, y, pageW - 28, 9, 'FD')
+    doc.setFontSize(9)
+    doc.text('QTD', 20, y + 6)
+    doc.text('DESCRIÇÃO PRODUTOS', 60, y + 6)
+    doc.text('V.UNIT', 157, y + 6)
+    doc.text('TOTAL', 184, y + 6)
+
+    y += 9
+    const pdfItems = Array.isArray(r.items) ? r.items : []
+    for (let i = 0; i < Math.max(10, pdfItems.length); i++) {
+      const item = pdfItems[i]
+      doc.rect(14, y, pageW - 28, 8)
+      doc.line(34, y, 34, y + 8)
+      doc.line(123, y, 123, y + 8)
+      doc.line(153, y, 153, y + 8)
+      doc.line(181, y, 181, y + 8)
+
+      if (item) {
+        const lineTotal = Number(item.quantity || 0) * Number(item.unit_price || 0)
+        doc.setFont('helvetica', 'normal')
+        doc.setFontSize(8)
+        doc.text(String(item.quantity || 0), 23, y + 5)
+        doc.text(String(item.description || '').slice(0, 46), 38, y + 5)
+        doc.text(money(item.unit_price || 0).replace('R$', '').trim(), 166, y + 5, { align: 'right' })
+        doc.text(money(lineTotal).replace('R$', '').trim(), 203, y + 5, { align: 'right' })
+      }
+      y += 8
+    }
+
+    y += 6
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text('PIX: 41-98464-8144', 18, y)
+    y += 5
+    doc.setFont('helvetica', 'normal')
+    doc.text('Abquella Carmo de Lima', 18, y)
+    y += 5
+    doc.text('Banco Itaú', 18, y)
+
+    doc.setFillColor(220, 220, 220)
+    doc.rect(120, y - 14, 75, 16, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.text('TOTAL R$', 128, y - 4)
+    doc.text(money(r.total || 0).replace('R$', '').trim(), 170, y - 4)
+
+    y += 14
+    doc.setFontSize(10)
+    doc.text('Pago', 18, y)
+    doc.rect(31, y - 4, 5, 5)
+    if (r.payment_status === 'Pago') {
+      doc.text('X', 32, y)
+    }
+    doc.text('Forma de Pagamento:', 48, y)
+    doc.line(92, y, 155, y)
+
+    y += 11
+    doc.text('Entregue', 18, y)
+    doc.rect(37, y - 4, 5, 5)
+    if (r.delivery_status === 'Entregue') {
+      doc.text('X', 38, y)
+    }
+
+    doc.setFontSize(8)
+    doc.setTextColor(100)
+    doc.text('Romaneio gerado pelo sistema.', 14, 287)
+    doc.save(`romaneio-${r.customer_name || 'cliente'}-${r.id.slice(0, 6)}.pdf`)
+  }
+
+  function sendWhatsapp(r: any) {
+    const itemList = Array.isArray(r.items)
+      ? r.items.map((i: any) => `• ${i.quantity}x ${i.description} - ${money(Number(i.quantity || 0) * Number(i.unit_price || 0))}`).join('\n')
+      : ''
+
+    const msg =
+      `Olá ${r.customer_name || ''}, segue seu romaneio:\n\n` +
+      `${itemList}\n\n` +
+      `Total: ${money(r.total || 0)}\n` +
+      `Pix: 41-98464-8144\n` +
+      `Abquella Carmo de Lima\n` +
+      `Banco Itaú`
+
+    openWhatsappNumber(r.whatsapp, msg)
+  }
+
+  function goHistory(customerId: string | null) {
+    if (!customerId) return
+    localStorage.setItem('selected_customer_history_id', customerId)
+    setPageFromRomaneio?.('historico_cliente')
+  }
+
+  const filtered = romaneios.filter(r => {
+    const q = search.trim().toLowerCase()
+    return !q ||
+      String(r.customer_name || r.customers?.name || '').toLowerCase().includes(q) ||
+      String(r.instagram || '').toLowerCase().includes(q) ||
+      String(r.whatsapp || '').toLowerCase().includes(q)
+  })
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={save} className="panel">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h3>{editingId ? 'Alterar romaneio' : 'Novo romaneio'}</h3>
+          {editingId && <button type="button" className="btn2" onClick={() => { setEditingId(null); setForm(emptyForm); setItems([{ product_id: '', description: '', quantity: 1, unit_price: 0 }]) }}>Cancelar edição</button>}
+        </div>
+
+        <div className="grid md:grid-cols-4 gap-3">
+          <div>
+            <label className="label">Cliente cadastrado</label>
+            <select className="input" value={form.customer_id} onChange={e => selectCustomer(e.target.value)}>
+              <option value="">Selecione ou cadastre na hora</option>
+              {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="label">Nome do cliente</label>
+            <input className="input" value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })} required />
+          </div>
+
+          <div>
+            <label className="label">Instagram</label>
+            <input className="input" value={form.instagram} onChange={e => setForm({ ...form, instagram: e.target.value })} placeholder="@cliente" />
+          </div>
+
+          <div>
+            <label className="label">Contato / WhatsApp</label>
+            <input className="input" value={form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} placeholder="(41) 99999-9999" />
+          </div>
+
+          <div>
+            <label className="label">Data da compra</label>
+            <input className="input" type="date" value={form.purchase_date} onChange={e => setForm({ ...form, purchase_date: e.target.value })} />
+          </div>
+
+          <div>
+            <label className="label">Pagamento</label>
+            <select className="input" value={form.payment_status} onChange={e => setForm({ ...form, payment_status: e.target.value })}>
+              <option>Pendente</option>
+              <option>Pago</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="label">Entrega</label>
+            <select className="input" value={form.delivery_status} onChange={e => setForm({ ...form, delivery_status: e.target.value })}>
+              <option>Pendente</option>
+              <option>Entregue</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="label">Forma</label>
+            <select className="input" value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}>
+              <option>Pix</option>
+              <option>Dinheiro</option>
+              <option>Cartão débito</option>
+              <option>Cartão crédito</option>
+              <option>Fiado</option>
+            </select>
+          </div>
+        </div>
+
+        {!form.customer_id && form.customer_name && (
+          <button type="button" className="btn2 mt-3" onClick={createQuickCustomer}>
+            Cadastrar cliente agora
+          </button>
+        )}
+
+        <section className="mt-5">
+          <h3>Produtos do romaneio</h3>
+          <div className="space-y-3">
+            {items.map((item, index) => (
+              <div key={index} className="grid md:grid-cols-6 gap-3 mini">
+                <div>
+                  <label className="label">Produto cadastrado</label>
+                  <select className="input" value={item.product_id} onChange={e => selectProduct(index, e.target.value)}>
+                    <option value="">Selecionar</option>
+                    {products.map(p => <option key={p.id} value={p.id}>{p.name} - {money(p.sale_price || 0)}</option>)}
+                  </select>
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="label">Descrição do produto</label>
+                  <input className="input" value={item.description} onChange={e => updateItem(index, { description: e.target.value })} required />
+                </div>
+
+                <div>
+                  <label className="label">Quantidade</label>
+                  <input className="input" type="number" value={item.quantity || ''} onChange={e => updateItem(index, { quantity: Number(e.target.value || 0) })} required />
+                </div>
+
+                <div>
+                  <label className="label">V. Unit</label>
+                  <input className="input" type="number" step="0.01" value={item.unit_price || ''} onChange={e => updateItem(index, { unit_price: Number(e.target.value || 0) })} required />
+                </div>
+
+                <div>
+                  <label className="label">Total</label>
+                  <div className="input">{money(Number(item.quantity || 0) * Number(item.unit_price || 0))}</div>
+                </div>
+
+                <div>
+                  <button type="button" className="btn-danger" onClick={() => removeItem(index)}>Remover</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button type="button" className="btn2 mt-3" onClick={addItem}>Adicionar mais produto</button>
+        </section>
+
+        <div className="grid md:grid-cols-3 gap-4 mt-5">
+          <div className="mini">
+            <p className="text-slate-400">Pix</p>
+            <strong>41-98464-8144</strong>
+            <p>Abquella Carmo de Lima</p>
+            <p>Banco Itaú</p>
+          </div>
+
+          <div className="mini">
+            <p className="text-slate-400">Total</p>
+            <strong className="text-2xl">{money(total)}</strong>
+          </div>
+
+          <div>
+            <label className="label">Observações</label>
+            <textarea className="input min-h-[95px]" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+          </div>
+        </div>
+
+        <button className="btn mt-4">{editingId ? 'Salvar alterações' : 'Criar romaneio'}</button>
+        {message && <p className="mini mt-4">{message}</p>}
+      </form>
+
+      <section className="panel">
+        <h3>Romaneios criados</h3>
+        <input className="input mb-4" placeholder="Buscar por nome, Instagram ou contato" value={search} onChange={e => setSearch(e.target.value)} />
+
+        <div className="overflow-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>Instagram</th>
+                <th>Contato</th>
+                <th>Produto</th>
+                <th>Data cadastro</th>
+                <th>Total</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(r => (
+                <tr key={r.id}>
+                  <td>
+                    <button className="text-emerald-300 hover:underline" onClick={() => goHistory(r.customer_id)}>
+                      {r.customer_name || r.customers?.name || '-'}
+                    </button>
+                  </td>
+                  <td>{r.instagram || '-'}</td>
+                  <td>{r.whatsapp || '-'}</td>
+                  <td>{Array.isArray(r.items) ? r.items.map((i: any) => i.description).join(', ') : '-'}</td>
+                  <td>{new Date(r.created_at).toLocaleString('pt-BR')}</td>
+                  <td>{money(r.total || 0)}</td>
+                  <td className="space-x-2 whitespace-nowrap">
+                    <button className="btn2" onClick={() => generatePDF(r)}>PDF</button>
+                    <button className="btn2" onClick={() => sendWhatsapp(r)}>WhatsApp</button>
+                    <button className="btn2" onClick={() => editRomaneio(r)}>Alterar</button>
+                    <button className="btn-danger" onClick={() => deleteRomaneio(r)}>Excluir</button>
+                  </td>
+                </tr>
+              ))}
+              {!filtered.length && <tr><td colSpan={7} className="text-slate-500">Nenhum romaneio criado.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function App() {
   const [session, setSession] = useState<any>(null)
   const [page, setPage] = useState<Page>('dashboard')
   const [menuCollapsed, setMenuCollapsed] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -2185,17 +3398,25 @@ function App() {
     relatorios: 'Relatórios',
     produtos: 'Produtos',
     clientes: 'Clientes',
+    romaneios: 'Romaneios',
     ordens_servico: 'Ordens de Serviço',
     historico_cliente: 'Histórico do Cliente',
     configuracoes: 'Configurações'
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex">
-      <Sidebar page={page} setPage={setPage} collapsed={menuCollapsed} setCollapsed={setMenuCollapsed} />
-      <main className="flex-1 min-w-0">
-        <Header title={titles[page]} />
-        <div className="p-6">
+    <div className="flex min-h-screen w-full overflow-x-hidden bg-slate-950 text-slate-100">
+      <Sidebar
+        page={page}
+        setPage={setPage}
+        collapsed={menuCollapsed}
+        setCollapsed={setMenuCollapsed}
+        mobileOpen={mobileMenuOpen}
+        setMobileOpen={setMobileMenuOpen}
+      />
+      <main className="min-w-0 flex-1 overflow-x-hidden">
+        <Header title={titles[page]} onOpenMenu={() => setMobileMenuOpen(true)} />
+        <div className="w-full max-w-full p-3 sm:p-4 lg:p-6">
           {page === 'dashboard' && <Dashboard />}
           {page === 'caixa' && <CashPage />}
           {page === 'pdv' && <PDVPage />}
@@ -2204,6 +3425,7 @@ function App() {
           {page === 'relatorios' && <ReportsPage />}
           {page === 'produtos' && <ProductsPage />}
           {page === 'clientes' && <CustomersPage />}
+          {page === 'romaneios' && <RomaneiosPage setPageFromRomaneio={setPage} />}
           {page === 'ordens_servico' && <ServiceOrdersPage />}
           {page === 'historico_cliente' && <CustomerHistoryPage />}
           {page === 'configuracoes' && <SettingsPage />}

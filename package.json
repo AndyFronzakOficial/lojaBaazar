@@ -1,7 +1,7 @@
 {
-  "name": "bazar-eletronicos-v21-ordem-servico-completa",
+  "name": "bazar-eletronicos-v23-responsivo-mobile",
   "private": true,
-  "version": "21.0.0",
+  "version": "23.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
