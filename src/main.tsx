@@ -3,13 +3,14 @@ import { createRoot } from 'react-dom/client'
 import jsPDF from 'jspdf'
 import * as XLSX from 'xlsx'
 import {
-  Banknote, BarChart3, CalendarCheck, Download, Home, LogOut, Menu, Package,
-  Receipt, Save, Search, Settings, ShoppingCart, Trash2, UserRound
+  Banknote, BarChart3, CalendarCheck, Download, Home, LogOut, Menu, Package, PenLine,
+  Receipt, Save, Search, Settings, ShoppingCart, Trash2, UserRound, Wrench, ClipboardList
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
+import ServiceOrdersPage from './ServiceOrdersPage'
 import './styles.css'
 
-type Page = 'dashboard' | 'caixa' | 'pdv' | 'financeiro' | 'relatorios' | 'produtos' | 'clientes' | 'configuracoes'
+type Page = 'dashboard' | 'caixa' | 'pdv' | 'ordens' | 'financeiro' | 'relatorios' | 'produtos' | 'clientes' | 'ordens_servico' | 'historico_cliente' | 'configuracoes'
 
 type Product = {
   id?: string
@@ -201,9 +202,25 @@ function gerarCupom80mm({ saleId, settings, items, subtotal, discount, addition,
 }
 
 
+
+function openWhatsappNumber(phone: string, message: string) {
+  const raw = String(phone || '').replace(/\D/g, '')
+  if (!raw) {
+    alert('WhatsApp não informado.')
+    return
+  }
+  const finalPhone = raw.startsWith('55') ? raw : `55${raw}`
+  window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(message)}`, '_blank')
+}
+
+function formatOSNumber(value: number | string | null | undefined) {
+  return `OS${String(value || 0).padStart(6, '0')}`
+}
+
+
 function Login() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('admin@loja.com')
+  const [password, setPassword] = useState('123456')
   const [error, setError] = useState('')
 
   async function signIn(e: React.FormEvent) {
@@ -216,8 +233,9 @@ function Login() {
   return (
     <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
       <form onSubmit={signIn} className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl">
-        <h1 className="mt-6 text-3xl  font-bold text-center">Login</h1>
-        
+        <div className="h-14 w-14 rounded-2xl bg-emerald-500 flex items-center justify-center font-black text-slate-950 text-2xl">B</div>
+        <h1 className="mt-6 text-3xl font-bold">Bazar Eletrônicos</h1>
+        <p className="text-slate-400 mt-2">Cada login acessa sua própria loja.</p>
         <label className="label mt-8">E-mail</label>
         <input className="input" value={email} onChange={e => setEmail(e.target.value)} />
         <label className="label mt-4">Senha</label>
@@ -234,10 +252,12 @@ function Sidebar({ page, setPage, collapsed, setCollapsed }: { page: Page, setPa
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'caixa', label: 'Caixa', icon: Banknote },
     { id: 'pdv', label: 'PDV', icon: ShoppingCart },
+    { id: 'ordens', label: 'Ordens de Serviço', icon: ClipboardList },
     { id: 'financeiro', label: 'Financeiro', icon: CalendarCheck },
     { id: 'relatorios', label: 'Relatórios', icon: BarChart3 },
     { id: 'produtos', label: 'Produtos', icon: Package },
-    { id: 'clientes', label: 'Clientes', icon: UserRound },
+    { id: 'clientes', label: 'Clientes', icon: UserRound, Wrench },
+    { id: 'historico_cliente', label: 'Histórico Cliente', icon: UserRound, Wrench },
     { id: 'configuracoes', label: 'Configurações', icon: Settings }
   ] as const
 
@@ -250,7 +270,7 @@ function Sidebar({ page, setPage, collapsed, setCollapsed }: { page: Page, setPa
       <div className="flex items-center justify-between gap-3 px-2 py-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="h-11 w-11 rounded-xl bg-emerald-500 text-slate-950 font-black flex items-center justify-center shrink-0">B</div>
-          {!collapsed && <div><strong>ERP</strong><p className="text-xs text-slate-400"></p></div>}
+          {!collapsed && <div><strong>Bazar ERP</strong><p className="text-xs text-slate-400">V19 ordens de serviço</p></div>}
         </div>
 
         <button type="button" onClick={() => setCollapsed(!collapsed)} className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-900" title={collapsed ? 'Mostrar menu' : 'Ocultar menu'}>
@@ -313,7 +333,9 @@ function Dashboard() {
     monthRevenue: 0,
     ticket: 0,
     top: [],
-    bottom: []
+    bottom: [],
+    serviceOrders: 0,
+    serviceOrdersPending: 0
   })
 
   async function load() {
@@ -340,33 +362,78 @@ function Dashboard() {
       items = saleItems || []
     }
 
-    const todayRevenue = validSales
-      .filter(s => String(s.created_at).slice(0, 10) === today())
-      .reduce((a, s) => a + Number(s.total || 0), 0)
+    const { data: financeEntries } = await supabase
+      .from('financial_entries')
+      .select('amount, type, paid_at')
+      .eq('user_id', user_id)
+      .eq('type', 'entrada')
+      .not('paid_at', 'is', null)
 
-    const weekRevenue = validSales
-      .filter(s => String(s.created_at).slice(0, 10) >= dateDaysAgo(6))
-      .reduce((a, s) => a + Number(s.total || 0), 0)
+    const paidEntries = financeEntries || []
+    const todayRevenue = paidEntries
+      .filter(entry => String(entry.paid_at).slice(0, 10) === today())
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
 
-    const monthRevenue = validSales.reduce((a, s) => a + Number(s.total || 0), 0)
-    const ticket = validSales.length ? monthRevenue / validSales.length : 0
+    const weekRevenue = paidEntries
+      .filter(entry => String(entry.paid_at).slice(0, 10) >= dateDaysAgo(6))
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
 
-    const sold = aggregateProductsSold(items)
+    const monthRevenue = paidEntries
+      .filter(entry => String(entry.paid_at).slice(0, 7) === currentMonth())
+      .reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
+
+    const { data: serviceOrdersData } = await supabase
+      .from('service_orders')
+      .select('id, total, payment_status, paid_at, order_date')
+      .eq('user_id', user_id)
+      .gte('order_date', monthStart)
+      .lte('order_date', lastDayOfMonth())
+
+    const paidServiceOrders = (serviceOrdersData || []).filter(order => order.payment_status === 'pago')
+    const serviceOrdersPending = (serviceOrdersData || [])
+      .filter(order => order.payment_status !== 'pago')
+      .reduce((sum, order) => sum + Number(order.total || 0), 0)
+
+    let orderItems: any[] = []
+    if (paidServiceOrders.length) {
+      const { data: orderItemsData } = await supabase
+        .from('service_order_items')
+        .select('product_id, quantity, total, products(name, product_code)')
+        .eq('user_id', user_id)
+        .in('service_order_id', paidServiceOrders.map(order => order.id))
+      orderItems = (orderItemsData || []).map(item => ({ ...item, profit: 0 }))
+    }
+
+    const ticketCount = validSales.length + paidServiceOrders.length
+    const ticket = ticketCount ? monthRevenue / ticketCount : 0
+
+    const sold = aggregateProductsSold([...items, ...orderItems])
     const top = [...sold].sort((a, b) => b.quantity - a.quantity).slice(0, 3)
     const bottom = [...sold].sort((a, b) => a.quantity - b.quantity).slice(0, 3)
 
-    setData({ todayRevenue, weekRevenue, monthRevenue, ticket, top, bottom })
+    setData({
+      todayRevenue,
+      weekRevenue,
+      monthRevenue,
+      ticket,
+      top,
+      bottom,
+      serviceOrders: (serviceOrdersData || []).length,
+      serviceOrdersPending
+    })
   }
 
   useEffect(() => { load() }, [])
 
   return (
     <div className="space-y-4">
-      <div className="grid md:grid-cols-4 gap-4">
+      <div className="grid md:grid-cols-3 xl:grid-cols-6 gap-4">
         <Card title="Faturamento do dia" value={money(data.todayRevenue)} icon={Receipt} />
         <Card title="Últimos 7 dias" value={money(data.weekRevenue)} icon={BarChart3} />
         <Card title="Faturamento do mês" value={money(data.monthRevenue)} icon={Banknote} />
         <Card title="Ticket médio" value={money(data.ticket)} icon={ShoppingCart} />
+        <Card title="Ordens no mês" value={String(data.serviceOrders)} icon={ClipboardList} />
+        <Card title="Ordens a receber" value={money(data.serviceOrdersPending)} icon={CalendarCheck} />
       </div>
 
       <div className="grid xl:grid-cols-2 gap-4">
@@ -978,8 +1045,8 @@ function ReportsPage() {
             <input className="input" type="month" value={month} onChange={e => setMonth(e.target.value)} />
           </div>
           <button className="btn self-end" onClick={load}>Atualizar</button>
-          <button className="btn2 self-end flex items-center justify-center gap-2" onClick={exportPDF}><Download size={16}/> PDF </button>
-          <button className="btn2 self-end" onClick={exportExcel}>Excel </button>
+          <button className="btn2 self-end flex items-center justify-center gap-2" onClick={exportPDF}><Download size={16}/> PDF profissional</button>
+          <button className="btn2 self-end" onClick={exportExcel}>Excel traduzido</button>
         </div>
       </section>
 
@@ -1342,6 +1409,755 @@ function SettingsPage() {
   )
 }
 
+
+function CustomerHistoryPage() {
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [selectedCustomerId, setSelectedCustomerId] = useState('')
+  const [customer, setCustomer] = useState<Customer | null>(null)
+  const [sales, setSales] = useState<any[]>([])
+  const [saleItems, setSaleItems] = useState<any[]>([])
+  const [orders, setOrders] = useState<any[]>([])
+  const [financial, setFinancial] = useState<any[]>([])
+  const [returns, setReturns] = useState<any[]>([])
+  const [warranties, setWarranties] = useState<any[]>([])
+  const [reservations, setReservations] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+
+  async function loadCustomers() {
+    const user_id = await getUserId()
+    const { data } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('user_id', user_id)
+      .order('name')
+
+    setCustomers(data || [])
+  }
+
+  useEffect(() => { loadCustomers() }, [])
+
+  async function loadHistory(customerId: string) {
+    setSelectedCustomerId(customerId)
+    setLoading(true)
+
+    const user_id = await getUserId()
+    const selected = customers.find(c => c.id === customerId) || null
+    setCustomer(selected)
+
+    const { data: salesData } = await supabase
+      .from('sales')
+      .select('*')
+      .eq('user_id', user_id)
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+
+    const saleIds = (salesData || []).map((s: any) => s.id)
+
+    let itemsData: any[] = []
+    if (saleIds.length) {
+      const { data } = await supabase
+        .from('sale_items')
+        .select('*, products(name, product_code, barcode)')
+        .eq('user_id', user_id)
+        .in('sale_id', saleIds)
+
+      itemsData = data || []
+    }
+
+    setSales(salesData || [])
+    setSaleItems(itemsData)
+
+    // Ordens de serviço da V19. Tenta consultar service_orders; se a tabela não existir ainda, ignora sem quebrar a tela.
+    try {
+      const { data } = await supabase
+        .from('service_orders')
+        .select('*')
+        .eq('user_id', user_id)
+        .or(`customer_id.eq.${customerId},customer_name.ilike.%${selected?.name || ''}%`)
+        .order('created_at', { ascending: false })
+      setOrders(data || [])
+    } catch {
+      setOrders([])
+    }
+
+    const { data: finData } = await supabase
+      .from('financial_entries')
+      .select('*')
+      .eq('user_id', user_id)
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+
+    setFinancial(finData || [])
+
+    try {
+      const { data } = await supabase
+        .from('customer_returns')
+        .select('*')
+        .eq('user_id', user_id)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+      setReturns(data || [])
+    } catch {
+      setReturns([])
+    }
+
+    try {
+      const { data } = await supabase
+        .from('warranties')
+        .select('*, products(name)')
+        .eq('user_id', user_id)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+      setWarranties(data || [])
+    } catch {
+      setWarranties([])
+    }
+
+    try {
+      const { data } = await supabase
+        .from('product_reservations')
+        .select('*, products(name)')
+        .eq('user_id', user_id)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+      setReservations(data || [])
+    } catch {
+      setReservations([])
+    }
+
+    setLoading(false)
+  }
+
+  const validSales = sales.filter(s => s.status !== 'cancelada')
+  const totalSpent = validSales.reduce((acc, s) => acc + Number(s.total || 0), 0)
+  const totalProfit = validSales.reduce((acc, s) => acc + Number(s.profit || 0), 0)
+  const pendingDebt = financial
+    .filter(f => (f.type === 'receber' || f.type === 'fiado') && !f.paid_at)
+    .reduce((acc, f) => acc + Number(f.amount || 0), 0)
+
+  const paidTotal = financial
+    .filter(f => f.paid_at)
+    .reduce((acc, f) => acc + Number(f.amount || 0), 0)
+
+  const lastPurchase = validSales.length
+    ? validSales.map(s => s.created_at).sort().reverse()[0]
+    : ''
+
+  function openWhatsApp() {
+    if (!customer?.phone) {
+      alert('Cliente sem WhatsApp/contato cadastrado.')
+      return
+    }
+
+    const phone = String(customer.phone).replace(/\D/g, '')
+    const finalPhone = phone.startsWith('55') ? phone : `55${phone}`
+    const msg = `Olá ${customer.name}, tudo bem? Aqui é da loja.`
+    window.open(`https://wa.me/${finalPhone}?text=${encodeURIComponent(msg)}`, '_blank')
+  }
+
+  function renderSaleItems(saleId: string) {
+    const items = saleItems.filter(i => i.sale_id === saleId)
+    if (!items.length) return <span className="text-slate-500">Sem itens vinculados.</span>
+
+    return (
+      <div className="space-y-1">
+        {items.map(item => (
+          <div key={item.id} className="text-xs text-slate-400">
+            {item.products?.name || 'Produto'} — {item.quantity}x {money(item.unit_price)} = {money(item.total)}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <section className="panel">
+        <h3>Buscar cliente</h3>
+        <div className="grid md:grid-cols-3 gap-3">
+          <select
+            className="input md:col-span-2"
+            value={selectedCustomerId}
+            onChange={e => loadHistory(e.target.value)}
+          >
+            <option value="">Selecione um cliente</option>
+            {customers.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name} {c.phone ? `- ${c.phone}` : ''}
+              </option>
+            ))}
+          </select>
+
+          <button className="btn2" onClick={loadCustomers}>Atualizar clientes</button>
+        </div>
+      </section>
+
+      {loading && <section className="panel">Carregando histórico...</section>}
+
+      {customer && !loading && (
+        <>
+          <section className="panel">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div>
+                <h3 className="mb-1">{customer.name}</h3>
+                <p className="text-sm text-slate-400">CPF/CNPJ: {customer.document || '-'}</p>
+                <p className="text-sm text-slate-400">Contato: {customer.phone || '-'}</p>
+                <p className="text-sm text-slate-400">Endereço: {customer.address || '-'}</p>
+                <p className="text-sm text-slate-400">Obs: {customer.notes || '-'}</p>
+              </div>
+
+              <button className="btn" onClick={openWhatsApp}>
+                Enviar WhatsApp
+              </button>
+            </div>
+          </section>
+
+          <div className="grid md:grid-cols-5 gap-4">
+            <div className="card"><p className="text-slate-400">Total gasto</p><strong className="text-2xl">{money(totalSpent)}</strong></div>
+            <div className="card"><p className="text-slate-400">Compras</p><strong className="text-2xl">{validSales.length}</strong></div>
+            <div className="card"><p className="text-slate-400">Fiado aberto</p><strong className="text-2xl">{money(pendingDebt)}</strong></div>
+            <div className="card"><p className="text-slate-400">Pagamentos</p><strong className="text-2xl">{money(paidTotal)}</strong></div>
+            <div className="card"><p className="text-slate-400">Última compra</p><strong className="text-xl">{lastPurchase ? brDate(lastPurchase) : '-'}</strong></div>
+          </div>
+
+          <section className="panel">
+            <h3>Todas as compras</h3>
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Pagamento</th>
+                  <th>Status</th>
+                  <th>Itens</th>
+                  <th>Total</th>
+                  <th>Lucro</th>
+                </tr>
+              </thead>
+              <tbody>
+                {validSales.map(s => (
+                  <tr key={s.id}>
+                    <td>{new Date(s.created_at).toLocaleString('pt-BR')}</td>
+                    <td>{s.payment_method || '-'}</td>
+                    <td>{s.status || '-'}</td>
+                    <td>{renderSaleItems(s.id)}</td>
+                    <td>{money(s.total)}</td>
+                    <td>{money(s.profit)}</td>
+                  </tr>
+                ))}
+                {!validSales.length && <tr><td colSpan={6} className="text-slate-500">Nenhuma compra encontrada.</td></tr>}
+              </tbody>
+            </table>
+          </section>
+
+          <section className="panel">
+            <h3>Ordens de serviço</h3>
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th>Data</th>
+                  <th>Descrição/Produto</th>
+                  <th>Total</th>
+                  <th>Pago</th>
+                  <th>Entregue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map(o => (
+                  <tr key={o.id}>
+                    <td>{o.created_at ? new Date(o.created_at).toLocaleString('pt-BR') : '-'}</td>
+                    <td>{o.product_name || o.description || o.service_description || '-'}</td>
+                    <td>{money(o.total || o.total_amount || 0)}</td>
+                    <td>{o.is_paid || o.paid ? <span className="tag-green">Pago</span> : <span className="tag-yellow">Pendente</span>}</td>
+                    <td>{o.is_delivered || o.delivered ? <span className="tag-green">Entregue</span> : <span className="tag-yellow">Pendente</span>}</td>
+                  </tr>
+                ))}
+                {!orders.length && <tr><td colSpan={5} className="text-slate-500">Nenhuma ordem encontrada.</td></tr>}
+              </tbody>
+            </table>
+          </section>
+
+          <div className="grid xl:grid-cols-2 gap-4">
+            <section className="panel">
+              <h3>Fiado / contas a receber</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Descrição</th>
+                    <th>Vencimento</th>
+                    <th>Valor</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {financial.filter(f => f.type === 'receber' || f.type === 'fiado').map(f => (
+                    <tr key={f.id}>
+                      <td>{new Date(f.created_at).toLocaleString('pt-BR')}</td>
+                      <td>{f.description}</td>
+                      <td>{f.due_date ? brDate(f.due_date) : '-'}</td>
+                      <td>{money(f.amount)}</td>
+                      <td>{f.paid_at ? <span className="tag-green">Pago</span> : <span className="tag-yellow">Aberto</span>}</td>
+                    </tr>
+                  ))}
+                  {!financial.filter(f => f.type === 'receber' || f.type === 'fiado').length && <tr><td colSpan={5} className="text-slate-500">Nenhum fiado encontrado.</td></tr>}
+                </tbody>
+              </table>
+            </section>
+
+            <section className="panel">
+              <h3>Pagamentos</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Descrição</th>
+                    <th>Forma</th>
+                    <th>Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {financial.filter(f => f.paid_at).map(f => (
+                    <tr key={f.id}>
+                      <td>{new Date(f.paid_at).toLocaleString('pt-BR')}</td>
+                      <td>{f.description}</td>
+                      <td>{f.payment_method || '-'}</td>
+                      <td>{money(f.amount)}</td>
+                    </tr>
+                  ))}
+                  {!financial.filter(f => f.paid_at).length && <tr><td colSpan={4} className="text-slate-500">Nenhum pagamento encontrado.</td></tr>}
+                </tbody>
+              </table>
+            </section>
+
+            <section className="panel">
+              <h3>Produtos reservados</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Produto</th>
+                    <th>Qtd</th>
+                    <th>Status</th>
+                    <th>Observação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reservations.map(r => (
+                    <tr key={r.id}>
+                      <td>{r.created_at ? new Date(r.created_at).toLocaleString('pt-BR') : '-'}</td>
+                      <td>{r.products?.name || r.product_name || '-'}</td>
+                      <td>{r.quantity || '-'}</td>
+                      <td>{r.status || '-'}</td>
+                      <td>{r.notes || '-'}</td>
+                    </tr>
+                  ))}
+                  {!reservations.length && <tr><td colSpan={5} className="text-slate-500">Nenhuma reserva encontrada.</td></tr>}
+                </tbody>
+              </table>
+            </section>
+
+            <section className="panel">
+              <h3>Trocas e devoluções</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Produto</th>
+                    <th>Motivo</th>
+                    <th>Valor</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {returns.map(r => (
+                    <tr key={r.id}>
+                      <td>{r.created_at ? new Date(r.created_at).toLocaleString('pt-BR') : '-'}</td>
+                      <td>{r.product_name || '-'}</td>
+                      <td>{r.reason || '-'}</td>
+                      <td>{money(r.amount || 0)}</td>
+                      <td>{r.status || '-'}</td>
+                    </tr>
+                  ))}
+                  {!returns.length && <tr><td colSpan={5} className="text-slate-500">Nenhuma troca/devolução encontrada.</td></tr>}
+                </tbody>
+              </table>
+            </section>
+
+            <section className="panel xl:col-span-2">
+              <h3>Garantias</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th>Produto</th>
+                    <th>Nº série/IMEI</th>
+                    <th>Início</th>
+                    <th>Fim</th>
+                    <th>Status</th>
+                    <th>Observação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {warranties.map(w => (
+                    <tr key={w.id}>
+                      <td>{w.products?.name || w.product_name || '-'}</td>
+                      <td>{w.serial_number || w.imei || '-'}</td>
+                      <td>{w.start_date ? brDate(w.start_date) : '-'}</td>
+                      <td>{w.end_date ? brDate(w.end_date) : '-'}</td>
+                      <td>{w.status || '-'}</td>
+                      <td>{w.notes || '-'}</td>
+                    </tr>
+                  ))}
+                  {!warranties.length && <tr><td colSpan={6} className="text-slate-500">Nenhuma garantia encontrada.</td></tr>}
+                </tbody>
+              </table>
+            </section>
+          </div>
+        </>
+      )}
+
+      {!customer && !loading && (
+        <section className="panel">
+          <p className="text-slate-400">Selecione um cliente para visualizar o histórico completo.</p>
+        </section>
+      )}
+    </div>
+  )
+}
+
+
+function ServiceOrdersPage() {
+  const [orders, setOrders] = useState<any[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('todos')
+  const [message, setMessage] = useState('')
+
+  const emptyForm = {
+    customer_id: '', customer_name: '', instagram: '', whatsapp: '', device: '',
+    reported_defect: '', visual_condition: '', requested_service: '',
+    technician: '', priority: 'Normal', estimated_deadline: '',
+    estimated_value: '', final_value: '', paid_entry: '',
+    payment_method: 'Pix', service_status: 'Recebido',
+    internal_notes: '',
+    assistance_terms: 'Estou ciente que a assistência técnica não se responsabiliza por dados pessoais que possam ser perdidos durante o reparo. Autorizo o serviço descrito acima.',
+    customer_signature: '', photos: '', product_id: '', product_name: ''
+  }
+
+  const [form, setForm] = useState<any>(emptyForm)
+
+  async function load() {
+    const user_id = await getUserId()
+    const { data: cs } = await supabase.from('customers').select('*').eq('user_id', user_id).order('name')
+    const { data: ps } = await supabase.from('products').select('*').eq('user_id', user_id).order('name')
+    const { data: os } = await supabase.from('service_orders').select('*, customers(name, phone)').eq('user_id', user_id).order('created_at', { ascending: false })
+    setCustomers(cs || [])
+    setProducts(ps || [])
+    setOrders(os || [])
+  }
+
+  useEffect(() => { load() }, [])
+
+  const filteredOrders = orders.filter(o => {
+    const q = search.trim().toLowerCase()
+    const okSearch = !q || String(o.os_number || '').includes(q) || String(o.customer_name || o.customers?.name || '').toLowerCase().includes(q) || String(o.device || '').toLowerCase().includes(q) || String(o.service_status || '').toLowerCase().includes(q)
+    const okStatus = statusFilter === 'todos' || o.service_status === statusFilter
+    return okSearch && okStatus
+  })
+
+  function fillCustomer(customerId: string) {
+    const c = customers.find(x => x.id === customerId)
+    setForm({ ...form, customer_id: customerId, customer_name: c?.name || '', whatsapp: c?.phone || form.whatsapp })
+  }
+
+  function fillProduct(productId: string) {
+    const p = products.find(x => x.id === productId)
+    setForm({ ...form, product_id: productId, product_name: p?.name || '', device: p?.name || form.device, estimated_value: form.estimated_value || String(p?.sale_price || ''), final_value: form.final_value || String(p?.sale_price || '') })
+  }
+
+  const finalValue = Number(form.final_value || 0)
+  const paidEntry = Number(form.paid_entry || 0)
+  const remaining = Math.max(0, finalValue - paidEntry)
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    const user_id = await getUserId()
+    const payload: any = {
+      user_id,
+      customer_id: form.customer_id || null,
+      customer_name: form.customer_name,
+      instagram: form.instagram,
+      whatsapp: form.whatsapp,
+      device: form.device,
+      reported_defect: form.reported_defect,
+      visual_condition: form.visual_condition,
+      requested_service: form.requested_service,
+      technician: form.technician,
+      priority: form.priority,
+      estimated_deadline: form.estimated_deadline || null,
+      estimated_value: Number(form.estimated_value || 0),
+      final_value: Number(form.final_value || 0),
+      paid_entry: Number(form.paid_entry || 0),
+      remaining_balance: remaining,
+      payment_method: form.payment_method,
+      service_status: form.service_status,
+      internal_notes: form.internal_notes,
+      assistance_terms: form.assistance_terms,
+      customer_signature: form.customer_signature,
+      photos: form.photos,
+      product_id: form.product_id || null,
+      product_name: form.product_name || form.device,
+      updated_at: new Date().toISOString()
+    }
+
+    let saved: any = null
+    if (editingId) {
+      const { data, error } = await supabase.from('service_orders').update(payload).eq('id', editingId).eq('user_id', user_id).select().single()
+      if (error) return setMessage(error.message)
+      saved = data
+    } else {
+      const { data, error } = await supabase.from('service_orders').insert(payload).select().single()
+      if (error) return setMessage(error.message)
+      saved = data
+    }
+
+    await supabase.from('financial_entries').delete().eq('user_id', user_id).eq('service_order_id', saved.id)
+
+    if (paidEntry > 0) {
+      await supabase.from('financial_entries').insert({
+        user_id, customer_id: form.customer_id || null, service_order_id: saved.id,
+        description: `Entrada da ${formatOSNumber(saved.os_number)}`,
+        type: 'entrada', payment_method: form.payment_method, amount: paidEntry,
+        paid_at: new Date().toISOString()
+      })
+    }
+
+    if (remaining > 0) {
+      await supabase.from('financial_entries').insert({
+        user_id, customer_id: form.customer_id || null, service_order_id: saved.id,
+        description: `Saldo restante da ${formatOSNumber(saved.os_number)}`,
+        type: 'receber', payment_method: form.payment_method, amount: remaining,
+        due_date: form.estimated_deadline || null, paid_at: null
+      })
+    }
+
+    setEditingId(null)
+    setForm(emptyForm)
+    setMessage(editingId ? 'Ordem de serviço atualizada.' : 'Ordem de serviço criada.')
+    await load()
+  }
+
+  function editOrder(order: any) {
+    setEditingId(order.id)
+    setForm({
+      customer_id: order.customer_id || '', customer_name: order.customer_name || order.customers?.name || '',
+      instagram: order.instagram || '', whatsapp: order.whatsapp || order.customers?.phone || '',
+      device: order.device || '', reported_defect: order.reported_defect || '',
+      visual_condition: order.visual_condition || '', requested_service: order.requested_service || '',
+      technician: order.technician || '', priority: order.priority || 'Normal',
+      estimated_deadline: order.estimated_deadline || '', estimated_value: String(order.estimated_value || ''),
+      final_value: String(order.final_value || ''), paid_entry: String(order.paid_entry || ''),
+      payment_method: order.payment_method || 'Pix', service_status: order.service_status || 'Recebido',
+      internal_notes: order.internal_notes || '', assistance_terms: order.assistance_terms || emptyForm.assistance_terms,
+      customer_signature: order.customer_signature || '', photos: order.photos || '',
+      product_id: order.product_id || '', product_name: order.product_name || ''
+    })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  async function deleteOrder(order: any) {
+    if (!confirm(`Excluir ${formatOSNumber(order.os_number)}?`)) return
+    const user_id = await getUserId()
+    await supabase.from('financial_entries').delete().eq('user_id', user_id).eq('service_order_id', order.id)
+    await supabase.from('service_orders').delete().eq('id', order.id).eq('user_id', user_id)
+    await load()
+  }
+
+  async function markPaid(order: any) {
+    const user_id = await getUserId()
+    await supabase.from('service_orders').update({ paid_entry: Number(order.final_value || 0), remaining_balance: 0 }).eq('id', order.id).eq('user_id', user_id)
+    await supabase.from('financial_entries').update({ paid_at: new Date().toISOString(), type: 'entrada' }).eq('user_id', user_id).eq('service_order_id', order.id)
+    await load()
+  }
+
+  async function generatePDF(order: any) {
+    const settings = await getStoreSettings()
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+    const w = doc.internal.pageSize.getWidth()
+    let y = 12
+
+    doc.setFillColor(15, 23, 42)
+    doc.rect(0, 0, w, 34, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(18)
+    doc.text(settings.store_name || 'HOMEshop Assistência Técnica', 14, 14)
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`CNPJ: ${settings.cnpj || '-'}`, 14, 21)
+    doc.text(`Endereço: ${settings.address || '-'}`, 14, 26)
+    doc.text(`WhatsApp: ${settings.phone || order.whatsapp || '-'}`, 14, 31)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(16)
+    doc.text('ORDEM DE SERVIÇO', w - 14, 15, { align: 'right' })
+    doc.setTextColor(220, 38, 38)
+    doc.text(`Nº ${formatOSNumber(order.os_number)}`, w - 14, 25, { align: 'right' })
+
+    y = 42
+    doc.setTextColor(15, 23, 42)
+
+    function section(title: string) {
+      doc.setFillColor(241, 245, 249)
+      doc.setDrawColor(203, 213, 225)
+      doc.rect(14, y, w - 28, 8, 'FD')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10)
+      doc.text(title, 17, y + 5.5)
+      y += 10
+    }
+
+    function row(label: string, value: any) {
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8)
+      doc.text(label, 16, y + 4)
+      doc.setFont('helvetica', 'normal')
+      const text = doc.splitTextToSize(String(value || '-'), w - 70)
+      doc.text(text, 58, y + 4)
+      y += Math.max(7, text.length * 4)
+    }
+
+    section('DADOS DO CLIENTE')
+    row('Cliente:', order.customer_name || order.customers?.name)
+    row('Instagram:', order.instagram)
+    row('WhatsApp:', order.whatsapp)
+    row('Data/Hora:', new Date(order.created_at).toLocaleString('pt-BR'))
+
+    section('DADOS DO APARELHO')
+    row('Aparelho:', order.device)
+    row('Defeito relatado:', order.reported_defect)
+    row('Condição visual:', order.visual_condition)
+    row('Serviço solicitado:', order.requested_service)
+
+    section('DETALHES DO SERVIÇO')
+    row('Técnico:', order.technician)
+    row('Prioridade:', order.priority)
+    row('Prazo estimado:', order.estimated_deadline ? brDate(order.estimated_deadline) : '-')
+    row('Status:', order.service_status)
+    row('Observações internas:', order.internal_notes)
+
+    section('FINANCEIRO')
+    row('Valor estimado:', money(order.estimated_value || 0))
+    row('Valor final:', money(order.final_value || 0))
+    row('Entrada paga:', money(order.paid_entry || 0))
+    row('Saldo restante:', money(order.remaining_balance || 0))
+    row('Forma de pagamento:', order.payment_method)
+    row('Pix:', '41-98464-8144 — Abquella Carmo de Lima — Banco Itaú')
+
+    section('TERMOS DA ASSISTÊNCIA')
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    const terms = doc.splitTextToSize(order.assistance_terms || '-', w - 32)
+    doc.text(terms, 16, y)
+    y += Math.max(18, terms.length * 4 + 6)
+
+    section('FOTOS ANEXADAS')
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    const photos = doc.splitTextToSize(order.photos || 'Nenhuma foto anexada.', w - 32)
+    doc.text(photos, 16, y)
+    y += Math.max(12, photos.length * 4 + 6)
+
+    if (y > 250) {
+      doc.addPage()
+      y = 18
+    }
+
+    section('ASSINATURA DO CLIENTE')
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(10)
+    doc.text(order.customer_signature || '________________________________________', 30, y + 10)
+    doc.setFontSize(8)
+    doc.text('Assinatura do cliente', 55, y + 16)
+    doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, 150, y + 16)
+    doc.setFontSize(8)
+    doc.setTextColor(100)
+    doc.text('Documento gerado pelo Sistema Bazar & Eletrônicos', 14, 287)
+    doc.save(`${formatOSNumber(order.os_number)}.pdf`)
+  }
+
+  function sendWhatsapp(order: any) {
+    const msg = `Olá ${order.customer_name || ''}, segue sua Ordem de Serviço ${formatOSNumber(order.os_number)}.\n\nAparelho: ${order.device || '-'}\nServiço: ${order.requested_service || '-'}\nStatus: ${order.service_status || '-'}\nValor final: ${money(order.final_value || 0)}\nEntrada paga: ${money(order.paid_entry || 0)}\nSaldo restante: ${money(order.remaining_balance || 0)}\n\nPix: 41-98464-8144\nAbquella Carmo de Lima\nBanco Itaú`
+    openWhatsappNumber(order.whatsapp, msg)
+  }
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={save} className="panel">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <h3>{editingId ? 'Alterar Ordem de Serviço' : 'Nova Ordem de Serviço'}</h3>
+          {editingId && <button type="button" className="btn2" onClick={() => { setEditingId(null); setForm(emptyForm) }}>Cancelar edição</button>}
+        </div>
+
+        <div className="grid md:grid-cols-4 gap-3">
+          <div><label className="label">Cliente cadastrado</label><select className="input" value={form.customer_id} onChange={e => fillCustomer(e.target.value)}><option value="">Selecione ou preencha manual</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          <div><label className="label">Nome do cliente</label><input className="input" value={form.customer_name} onChange={e => setForm({ ...form, customer_name: e.target.value })} required /></div>
+          <div><label className="label">Instagram</label><input className="input" placeholder="@cliente" value={form.instagram} onChange={e => setForm({ ...form, instagram: e.target.value })} /></div>
+          <div><label className="label">WhatsApp</label><input className="input" placeholder="(41) 99999-9999" value={form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} /></div>
+
+          <div><label className="label">Produto/aparelho cadastrado</label><select className="input" value={form.product_id} onChange={e => fillProduct(e.target.value)}><option value="">Selecione se existir</option>{products.map(p => <option key={p.id} value={p.id}>{p.name} - {money(p.sale_price || 0)}</option>)}</select></div>
+          <div><label className="label">Aparelho</label><input className="input" placeholder="Ex: iPhone 11, Samsung A32" value={form.device} onChange={e => setForm({ ...form, device: e.target.value })} required /></div>
+          <div><label className="label">Técnico responsável</label><input className="input" placeholder="Nome do técnico" value={form.technician} onChange={e => setForm({ ...form, technician: e.target.value })} /></div>
+          <div><label className="label">Prioridade</label><select className="input" value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}><option>Baixa</option><option>Normal</option><option>Alta</option><option>Urgente</option></select></div>
+
+          <div className="md:col-span-2"><label className="label">Defeito relatado pelo cliente</label><input className="input" placeholder="Ex: tela trincada, não carrega, não liga" value={form.reported_defect} onChange={e => setForm({ ...form, reported_defect: e.target.value })} /></div>
+          <div className="md:col-span-2"><label className="label">Condição visual do aparelho</label><input className="input" placeholder="Ex: riscos, tampa quebrada, sem marcas" value={form.visual_condition} onChange={e => setForm({ ...form, visual_condition: e.target.value })} /></div>
+          <div className="md:col-span-2"><label className="label">Serviço solicitado</label><input className="input" placeholder="Ex: troca de tela, troca de bateria" value={form.requested_service} onChange={e => setForm({ ...form, requested_service: e.target.value })} /></div>
+          <div><label className="label">Prazo estimado</label><input className="input" type="date" value={form.estimated_deadline} onChange={e => setForm({ ...form, estimated_deadline: e.target.value })} /></div>
+          <div><label className="label">Status do serviço</label><select className="input" value={form.service_status} onChange={e => setForm({ ...form, service_status: e.target.value })}><option>Recebido</option><option>Em análise</option><option>Aguardando peça</option><option>Em manutenção</option><option>Pronto</option><option>Entregue</option><option>Cancelado</option></select></div>
+
+          <div><label className="label">Valor estimado</label><input className="input" type="number" step="0.01" value={form.estimated_value} onChange={e => setForm({ ...form, estimated_value: e.target.value })} /></div>
+          <div><label className="label">Valor final</label><input className="input" type="number" step="0.01" value={form.final_value} onChange={e => setForm({ ...form, final_value: e.target.value })} /></div>
+          <div><label className="label">Entrada paga</label><input className="input" type="number" step="0.01" value={form.paid_entry} onChange={e => setForm({ ...form, paid_entry: e.target.value })} /></div>
+          <div><label className="label">Saldo restante</label><input className="input" value={money(remaining)} disabled /></div>
+          <div><label className="label">Forma de pagamento</label><select className="input" value={form.payment_method} onChange={e => setForm({ ...form, payment_method: e.target.value })}><option>Pix</option><option>Dinheiro</option><option>Cartão débito</option><option>Cartão crédito</option><option>Fiado</option></select></div>
+
+          <div className="md:col-span-2"><label className="label">Observações internas</label><textarea className="input min-h-[90px]" value={form.internal_notes} onChange={e => setForm({ ...form, internal_notes: e.target.value })} /></div>
+          <div className="md:col-span-2"><label className="label">Fotos anexadas</label><textarea className="input min-h-[90px]" placeholder="Cole links das fotos ou nomes dos arquivos separados por linha" value={form.photos} onChange={e => setForm({ ...form, photos: e.target.value })} /></div>
+          <div className="md:col-span-3"><label className="label">Termos da assistência</label><textarea className="input min-h-[110px]" value={form.assistance_terms} onChange={e => setForm({ ...form, assistance_terms: e.target.value })} /></div>
+          <div><label className="label">Assinatura do cliente</label><textarea className="input min-h-[110px]" placeholder="Digite o nome ou assinatura manual" value={form.customer_signature} onChange={e => setForm({ ...form, customer_signature: e.target.value })} /></div>
+        </div>
+
+        <button className="btn mt-4">{editingId ? 'Salvar alterações' : 'Criar ordem de serviço'}</button>
+        {message && <p className="mini mt-4">{message}</p>}
+      </form>
+
+      <section className="panel">
+        <h3>Consultar ordens de serviço</h3>
+        <div className="grid md:grid-cols-4 gap-3 mb-4">
+          <input className="input md:col-span-2" placeholder="Buscar por OS, cliente, aparelho ou status" value={search} onChange={e => setSearch(e.target.value)} />
+          <select className="input" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}><option value="todos">Todos os status</option><option>Recebido</option><option>Em análise</option><option>Aguardando peça</option><option>Em manutenção</option><option>Pronto</option><option>Entregue</option><option>Cancelado</option></select>
+          <button className="btn2" onClick={load}>Atualizar</button>
+        </div>
+        <div className="overflow-auto">
+          <table className="w-full text-sm">
+            <thead><tr><th>OS</th><th>Entrada</th><th>Cliente</th><th>Aparelho</th><th>Técnico</th><th>Prioridade</th><th>Status</th><th>Final</th><th>Saldo</th><th>Ações</th></tr></thead>
+            <tbody>
+              {filteredOrders.map(o => (
+                <tr key={o.id}>
+                  <td>{formatOSNumber(o.os_number)}</td><td>{new Date(o.created_at).toLocaleString('pt-BR')}</td><td>{o.customer_name || o.customers?.name || '-'}</td><td>{o.device}</td><td>{o.technician || '-'}</td><td>{o.priority}</td><td>{o.service_status}</td><td>{money(o.final_value || 0)}</td><td>{money(o.remaining_balance || 0)}</td>
+                  <td className="space-x-2 whitespace-nowrap"><button className="btn2" onClick={() => generatePDF(o)}>PDF</button><button className="btn2" onClick={() => sendWhatsapp(o)}>WhatsApp</button><button className="btn2" onClick={() => editOrder(o)}>Alterar</button>{Number(o.remaining_balance || 0) > 0 && <button className="btn2" onClick={() => markPaid(o)}>Pago</button>}<button className="btn-danger" onClick={() => deleteOrder(o)}>Excluir</button></td>
+                </tr>
+              ))}
+              {!filteredOrders.length && <tr><td colSpan={10} className="text-slate-500">Nenhuma ordem encontrada.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function App() {
   const [session, setSession] = useState<any>(null)
   const [page, setPage] = useState<Page>('dashboard')
@@ -1364,10 +2180,13 @@ function App() {
     dashboard: 'Dashboard',
     caixa: 'Caixa',
     pdv: 'PDV',
+    ordens: 'Ordens de Serviço',
     financeiro: 'Financeiro',
     relatorios: 'Relatórios',
     produtos: 'Produtos',
     clientes: 'Clientes',
+    ordens_servico: 'Ordens de Serviço',
+    historico_cliente: 'Histórico do Cliente',
     configuracoes: 'Configurações'
   }
 
@@ -1380,10 +2199,13 @@ function App() {
           {page === 'dashboard' && <Dashboard />}
           {page === 'caixa' && <CashPage />}
           {page === 'pdv' && <PDVPage />}
+          {page === 'ordens' && <ServiceOrdersPage />}
           {page === 'financeiro' && <FinancePage />}
           {page === 'relatorios' && <ReportsPage />}
           {page === 'produtos' && <ProductsPage />}
           {page === 'clientes' && <CustomersPage />}
+          {page === 'ordens_servico' && <ServiceOrdersPage />}
+          {page === 'historico_cliente' && <CustomerHistoryPage />}
           {page === 'configuracoes' && <SettingsPage />}
         </div>
       </main>
