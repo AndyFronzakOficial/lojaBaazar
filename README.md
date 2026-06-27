@@ -189,14 +189,3 @@ Corrigido:
 Corrigido:
 - Valor da coluna TOTAL agora fica dentro do quadrado da tabela.
 - Descrição do produto foi limitada para não invadir as colunas de valor.
-
-
-## V23 — Responsivo para celular
-
-- Menu lateral móvel em formato de gaveta.
-- Botão para abrir e fechar o menu no celular.
-- Formulários adaptados para telas pequenas.
-- Tabelas com rolagem horizontal.
-- Cards, botões, campos e espaçamentos otimizados para toque.
-- Cabeçalho fixo no topo.
-- Login responsivo.

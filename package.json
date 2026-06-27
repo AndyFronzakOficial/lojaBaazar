@@ -1,7 +1,7 @@
 {
-  "name": "bazar-eletronicos-v23-responsivo-mobile",
+  "name": "bazar-eletronicos-v22-romaneio-logo-upload",
   "private": true,
-  "version": "23.0.0",
+  "version": "22.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

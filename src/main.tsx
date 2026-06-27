@@ -4,7 +4,7 @@ import jsPDF from 'jspdf'
 import * as XLSX from 'xlsx'
 import {
   Banknote, BarChart3, CalendarCheck, Download, Home, LogOut, Menu, Package, PenLine,
-  Receipt, FileText, Save, Search, Settings, ShoppingCart, Trash2, UserRound, Wrench, ClipboardList, X
+  Receipt, FileText, Save, Search, Settings, ShoppingCart, Trash2, UserRound, Wrench, ClipboardList
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import './styles.css'
@@ -371,10 +371,10 @@ function Login() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-4 sm:p-6">
-      <form onSubmit={signIn} className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-5 sm:p-8 shadow-2xl">
+    <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
+      <form onSubmit={signIn} className="w-full max-w-md rounded-3xl border border-slate-800 bg-slate-900/80 p-8 shadow-2xl">
         <div className="h-14 w-14 rounded-2xl bg-emerald-500 flex items-center justify-center font-black text-slate-950 text-2xl">B</div>
-        <h1 className="mt-6 text-2xl sm:text-3xl font-bold">Bazar Eletrônicos</h1>
+        <h1 className="mt-6 text-3xl font-bold">Bazar Eletrônicos</h1>
         <p className="text-slate-400 mt-2">Cada login acessa sua própria loja.</p>
         <label className="label mt-8">E-mail</label>
         <input className="input" value={email} onChange={e => setEmail(e.target.value)} />
@@ -387,21 +387,7 @@ function Login() {
   )
 }
 
-function Sidebar({
-  page,
-  setPage,
-  collapsed,
-  setCollapsed,
-  mobileOpen,
-  setMobileOpen
-}: {
-  page: Page
-  setPage: (p: Page) => void
-  collapsed: boolean
-  setCollapsed: (v: boolean) => void
-  mobileOpen: boolean
-  setMobileOpen: (v: boolean) => void
-}) {
+function Sidebar({ page, setPage, collapsed, setCollapsed }: { page: Page, setPage: (p: Page) => void, collapsed: boolean, setCollapsed: (v: boolean) => void }) {
   const items = [
     { id: 'dashboard', label: 'Dashboard', icon: Home },
     { id: 'caixa', label: 'Caixa', icon: Banknote },
@@ -410,124 +396,51 @@ function Sidebar({
     { id: 'financeiro', label: 'Financeiro', icon: CalendarCheck },
     { id: 'relatorios', label: 'Relatórios', icon: BarChart3 },
     { id: 'produtos', label: 'Produtos', icon: Package },
-    { id: 'clientes', label: 'Clientes', icon: UserRound },
-    { id: 'historico_cliente', label: 'Histórico Cliente', icon: UserRound },
+    { id: 'clientes', label: 'Clientes', icon: UserRound, Wrench },
+    { id: 'historico_cliente', label: 'Histórico Cliente', icon: UserRound, Wrench },
     { id: 'romaneios', label: 'Romaneios', icon: FileText },
     { id: 'configuracoes', label: 'Configurações', icon: Settings }
   ] as const
 
   async function logout() {
-    setMobileOpen(false)
     await supabase.auth.signOut()
   }
 
-  function navigate(pageId: Page) {
-    setPage(pageId)
-    setMobileOpen(false)
-  }
-
-  const showLabels = mobileOpen || !collapsed
-
   return (
-    <>
-      {mobileOpen && (
-        <button
-          type="button"
-          aria-label="Fechar menu"
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-[1px] lg:hidden"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-
-      <aside
-        className={`
-          fixed inset-y-0 left-0 z-50 flex w-[86vw] max-w-72 -translate-x-full flex-col
-          border-r border-slate-800 bg-slate-950 p-4 shadow-2xl transition-all duration-200
-          ${mobileOpen ? 'translate-x-0' : ''}
-          lg:static lg:z-auto lg:max-w-none lg:translate-x-0 lg:shadow-none
-          ${collapsed ? 'lg:w-20' : 'lg:w-72'}
-        `}
-      >
-        <div className="flex items-center justify-between gap-3 px-1 py-3 sm:px-2 sm:py-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-2xl font-black text-slate-950">
-              B
-            </div>
-
-            {showLabels && (
-              <div className="min-w-0">
-                <strong className="block truncate">Bazar ERP</strong>
-                <p className="truncate text-xs text-slate-400">V23 responsivo mobile</p>
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setMobileOpen(false)}
-            className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-900 lg:hidden"
-            title="Fechar menu"
-          >
-            <X size={19} />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setCollapsed(!collapsed)}
-            className="hidden rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-900 lg:inline-flex"
-            title={collapsed ? 'Mostrar menu' : 'Ocultar menu'}
-          >
-            <Menu size={18} />
-          </button>
+    <aside className={`${collapsed ? 'w-20' : 'w-72'} bg-slate-950 border-r border-slate-800 p-4 hidden lg:flex flex-col transition-all duration-200`}>
+      <div className="flex items-center justify-between gap-3 px-2 py-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="h-11 w-11 rounded-xl bg-emerald-500 text-slate-950 font-black flex items-center justify-center shrink-0">B</div>
+          {!collapsed && <div><strong>Bazar ERP</strong><p className="text-xs text-slate-400">V22 romaneio + recibos</p></div>}
         </div>
 
-        <nav className="mt-3 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-1">
-          {items.map(item => {
-            const Icon = item.icon
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => navigate(item.id as Page)}
-                className={`nav ${collapsed ? 'lg:justify-center lg:px-2' : ''} ${page === item.id ? 'nav-active' : ''}`}
-                title={item.label}
-              >
-                <Icon size={19} className="shrink-0" />
-                {showLabels && <span className="truncate">{item.label}</span>}
-              </button>
-            )
-          })}
-        </nav>
-
-        <button
-          type="button"
-          onClick={logout}
-          className={`nav mt-3 text-red-300 ${collapsed ? 'lg:justify-center lg:px-2' : ''}`}
-          title="Sair"
-        >
-          <LogOut size={19} className="shrink-0" />
-          {showLabels && <span>Sair</span>}
+        <button type="button" onClick={() => setCollapsed(!collapsed)} className="rounded-xl border border-slate-700 p-2 text-slate-300 hover:bg-slate-900" title={collapsed ? 'Mostrar menu' : 'Ocultar menu'}>
+          <Menu size={18} />
         </button>
-      </aside>
-    </>
+      </div>
+
+      <nav className="mt-4 space-y-1 flex-1 overflow-auto">
+        {items.map(item => {
+          const Icon = item.icon
+          return (
+            <button key={item.id} onClick={() => setPage(item.id as Page)} className={`nav ${collapsed ? 'justify-center px-2' : ''} ${page === item.id ? 'nav-active' : ''}`} title={item.label}>
+              <Icon size={18}/>
+              {!collapsed && item.label}
+            </button>
+          )
+        })}
+      </nav>
+
+      <button onClick={logout} className={`nav text-red-300 ${collapsed ? 'justify-center px-2' : ''}`} title="Sair">
+        <LogOut size={18}/>
+        {!collapsed && 'Sair'}
+      </button>
+    </aside>
   )
 }
 
-function Header({ title, onOpenMenu }: { title: string; onOpenMenu: () => void }) {
-  return (
-    <header className="sticky top-0 z-30 flex min-h-16 items-center gap-3 border-b border-slate-800 bg-slate-900/95 px-3 py-3 backdrop-blur sm:px-4 lg:px-6">
-      <button
-        type="button"
-        onClick={onOpenMenu}
-        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-700 text-slate-200 hover:bg-slate-800 lg:hidden"
-        aria-label="Abrir menu"
-      >
-        <Menu size={21} />
-      </button>
-
-      <h2 className="min-w-0 truncate text-lg font-bold sm:text-xl">{title}</h2>
-    </header>
-  )
+function Header({ title }: { title: string }) {
+  return <header className="border-b border-slate-800 bg-slate-900/60 px-6 py-4"><h2 className="text-xl font-bold">{title}</h2></header>
 }
 
 function Card({ title, value, icon: Icon }: { title: string, value: string, icon: any }) {
@@ -3374,7 +3287,6 @@ function App() {
   const [session, setSession] = useState<any>(null)
   const [page, setPage] = useState<Page>('dashboard')
   const [menuCollapsed, setMenuCollapsed] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -3405,18 +3317,11 @@ function App() {
   }
 
   return (
-    <div className="flex min-h-screen w-full overflow-x-hidden bg-slate-950 text-slate-100">
-      <Sidebar
-        page={page}
-        setPage={setPage}
-        collapsed={menuCollapsed}
-        setCollapsed={setMenuCollapsed}
-        mobileOpen={mobileMenuOpen}
-        setMobileOpen={setMobileMenuOpen}
-      />
-      <main className="min-w-0 flex-1 overflow-x-hidden">
-        <Header title={titles[page]} onOpenMenu={() => setMobileMenuOpen(true)} />
-        <div className="w-full max-w-full p-3 sm:p-4 lg:p-6">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex">
+      <Sidebar page={page} setPage={setPage} collapsed={menuCollapsed} setCollapsed={setMenuCollapsed} />
+      <main className="flex-1 min-w-0">
+        <Header title={titles[page]} />
+        <div className="p-6">
           {page === 'dashboard' && <Dashboard />}
           {page === 'caixa' && <CashPage />}
           {page === 'pdv' && <PDVPage />}
