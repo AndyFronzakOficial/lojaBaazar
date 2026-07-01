@@ -1,0 +1,13 @@
+V32 - Pet Shop
+
+Base: V31 Escola, Cursos e Academia.
+
+Novidades:
+- Segmento Pet Shop recebeu módulos próprios: Pets e Vacinas/Saúde.
+- Cadastro completo de pets com tutor, espécie, raça, porte, peso, nascimento, cor, temperamento, alergias e observações.
+- Geração de PDF da ficha do pet.
+- Histórico de vacinas, vermífugos, banho e tosa, consultas, retornos e outros procedimentos.
+- Controle de próxima data/retorno.
+- Registro de profissional, valor e observações.
+- PDF para registros de saúde e atendimentos.
+- Migração Supabase: supabase/v32_pet_shop_migration.sql.

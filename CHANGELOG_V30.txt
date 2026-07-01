@@ -1,0 +1,9 @@
+V30 - Oficina Mecânica
+
+- Novo módulo Veículos.
+- Novo módulo Checklist de Entrada.
+- Novo módulo Manutenção Preventiva.
+- Menu da Oficina atualizado automaticamente.
+- PDFs de checklist para o cliente.
+- Tabelas Supabase com RLS: workshop_vehicles, workshop_checklists e workshop_maintenance.
+- Migração: supabase/v30_oficina_mecanica_migration.sql

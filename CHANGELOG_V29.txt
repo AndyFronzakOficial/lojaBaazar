@@ -1,0 +1,8 @@
+V29 - Restaurante e Pizzaria
+
+- Segmento Restaurante/Pizzaria agora ativa módulos próprios.
+- Novo módulo Mesas e Comandas.
+- Novo Painel da Cozinha com status: novo, preparo, forno, pronto e entregue.
+- Novo módulo Delivery com endereço, taxa, pagamento e status de entrega.
+- Tabela restaurant_orders no Supabase com políticas RLS por usuário.
+- Build validado com npm run build.

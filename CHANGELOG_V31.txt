@@ -1,0 +1,9 @@
+V31 - Escola, Cursos e Academia
+
+- Novos módulos no menu: Matrículas, Turmas, Presença e Certificados.
+- Escola/Cursos agora controla alunos, cursos, turmas, mensalidades, frequência e certificados em PDF.
+- Academia agora controla alunos, planos, modalidades, check-in/presença, avaliações e certificados.
+- Matrículas com status ativo, trancado, concluído e cancelado.
+- Exportação das matrículas para Excel.
+- Emissão de certificado/avaliação em PDF.
+- Migração Supabase: supabase/v31_escola_cursos_academia_migration.sql

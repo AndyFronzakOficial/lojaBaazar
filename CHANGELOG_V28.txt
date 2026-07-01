@@ -1,0 +1,10 @@
+V28 — Agenda e Profissionais
+
+- Adicionado módulo Agenda e Profissionais.
+- Ativado para barbearia, salão de beleza, pet shop, academia e escola/cursos.
+- Cadastro de profissionais com comissão e horário de trabalho.
+- Cadastro de agendamentos vinculados a clientes e profissionais.
+- Controle de status do atendimento.
+- Indicadores diários da agenda.
+- Adicionadas tabelas professionals e appointments ao Supabase.
+- Criada migração supabase/v28_agenda_profissionais_migration.sql.

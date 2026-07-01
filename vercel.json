@@ -1,5 +1,6 @@
 {
-  "installCommand": "npm install",
+  "framework": "vite",
+  "installCommand": "npm ci --registry=https://registry.npmjs.org/ --no-audit --no-fund",
   "buildCommand": "npm run build",
   "outputDirectory": "dist"
 }

@@ -1,0 +1,11 @@
+V33 - SaaS, Assinaturas, Planos e Multiempresa
+
+- Novo menu Assinaturas e Planos.
+- Novo menu Multiempresa.
+- Cadastro de planos: Básico, Profissional, Premium e Enterprise.
+- Controle de preço mensal, usuários, empresas, armazenamento, módulos e dias de teste.
+- Cadastro de empresas assinantes com responsável, contato, segmento, plano, teste grátis e vencimento.
+- Status da conta: em teste, ativa, atrasada, suspensa e cancelada.
+- Dashboard SaaS com MRR previsto, empresas ativas/teste, inadimplentes e planos.
+- Exportação das empresas SaaS para Excel.
+- Migração Supabase v33_saas_multiempresa_migration.sql com tabelas, índices e políticas RLS.

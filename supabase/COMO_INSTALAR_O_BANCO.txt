@@ -1,0 +1,42 @@
+INSTALAÇÃO DO BANCO SUPABASE
+
+IMPORTANTE:
+Publicar o site na Vercel não cria as tabelas do banco.
+
+PASSO A PASSO:
+1. Acesse o painel do Supabase do projeto usado pelo site.
+2. Abra SQL Editor.
+3. Clique em New query.
+4. Abra o arquivo:
+   supabase/INSTALAR_BANCO_COMPLETO.sql
+5. Copie todo o conteúdo.
+6. Cole no SQL Editor.
+7. Clique em Run.
+8. Aguarde aparecer "Success".
+9. Atualize o site e entre novamente.
+
+O arquivo cria:
+- products
+- customers
+- cash_sessions
+- sales
+- sale_items
+- financial_entries
+- service_orders
+- service_order_items
+- romaneios
+- configurações, fornecedores, compras e histórico do cliente
+- políticas de segurança RLS
+- bucket de logos
+- atualização do cache do Supabase
+
+Se o SQL já tiver sido executado antes, ele utiliza IF NOT EXISTS e pode
+ser executado novamente para completar tabelas ou colunas ausentes.
+
+ATUALIZAÇÃO DA V26 PARA A V27
+-----------------------------
+Se o banco já está instalado, execute no SQL Editor:
+
+supabase/v27_sistema_modular_migration.sql
+
+Isso adiciona o segmento da empresa e a lista de módulos habilitados.

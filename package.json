@@ -1,7 +1,7 @@
 {
-  "name": "bazar-eletronicos-v22-romaneio-logo-upload",
+  "name": "bazar-eletronicos-v33-saas-multiempresa",
   "private": true,
-  "version": "22.0.0",
+  "version": "33.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -26,8 +26,9 @@
     "typescript": "^5.6.3",
     "vite": "^5.4.11"
   },
-  "packageManager": "npm@10.9.2",
+  "packageManager": "npm@11.4.2",
   "engines": {
-    "node": "20.x"
+    "node": "24.x",
+    "npm": ">=11"
   }
 }

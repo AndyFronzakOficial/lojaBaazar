@@ -1,0 +1,19 @@
+SISTEMA ERP MODULAR — V27
+
+O que foi adicionado:
+- Tela inicial para escolha do segmento.
+- 10 segmentos disponíveis.
+- Menu lateral adaptado automaticamente ao segmento.
+- Nomes de módulos personalizados, como Alunos, Tutores, Peças e Estoque.
+- Segmento atual exibido no menu.
+- Opção para trocar de segmento.
+- Configuração do segmento dentro da página Configurações.
+- Persistência no Supabase por empresa/usuário.
+- Segurança local com localStorage caso a migração ainda não tenha sido executada.
+- Novo SQL de migração: supabase/v27_sistema_modular_migration.sql.
+- Schema completo atualizado para instalações novas.
+
+Importante:
+Esta versão organiza os módulos existentes da V26. Os módulos especializados de agenda,
+profissionais, comissões, veículos, pets, matrículas, mesas e comandas serão implementados
+nas próximas versões.
