@@ -40,3 +40,12 @@ Se o banco já está instalado, execute no SQL Editor:
 supabase/v27_sistema_modular_migration.sql
 
 Isso adiciona o segmento da empresa e a lista de módulos habilitados.
+
+ATUALIZAÇÃO DA V33 PARA A V34
+-----------------------------
+Para ativar pagamento por Pix, bloqueio e renovação por segmento, execute:
+
+supabase/v34_mercado_pago_assinaturas_migration.sql
+
+Depois configure as credenciais privadas do Mercado Pago e do Supabase
+na Vercel conforme o arquivo MERCADO_PAGO_CONFIGURACAO.md.

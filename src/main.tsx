@@ -6,7 +6,8 @@ import {
   ArrowRight, Banknote, BarChart3, CalendarCheck, Car, CheckCircle2, ClipboardList,
   Download, Dumbbell, FileText, GraduationCap, Home, Layers3, LogOut, Menu, Package,
   PawPrint, PenLine, Printer, Receipt, Save, Scissors, Search, Settings, ShoppingCart,
-  Smartphone, Sparkles, Store, Trash2, UserRound, UtensilsCrossed, Wrench, X, Crown, CreditCard, Building2
+  Smartphone, Sparkles, Store, Trash2, UserRound, UtensilsCrossed, Wrench, X, Crown, CreditCard, Building2,
+  LockKeyhole, Copy, RefreshCw, QrCode, Clock3, ShieldCheck, AlertTriangle
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import './styles.css'
@@ -14,6 +15,31 @@ import './styles.css'
 type Page = 'inicio' | 'dashboard' | 'agenda' | 'caixa' | 'pdv' | 'ordens' | 'financeiro' | 'relatorios' | 'produtos' | 'clientes' | 'romaneios' | 'ordens_servico' | 'historico_cliente' | 'configuracoes' | 'mesas' | 'cozinha' | 'delivery' | 'veiculos' | 'checklist' | 'manutencao' | 'matriculas' | 'turmas' | 'presenca' | 'certificados' | 'pets' | 'vacinas' | 'assinaturas' | 'empresas_saas'
 
 type SegmentId = 'loja' | 'comunicacao_visual' | 'assistencia_tecnica' | 'oficina' | 'barbearia' | 'salao_beleza' | 'pet_shop' | 'academia' | 'escola_cursos' | 'restaurante'
+
+
+type SegmentAccess = {
+  segment: SegmentId
+  status: string
+  active: boolean
+  valid_until: string | null
+  days_left: number
+}
+
+type PixPayment = {
+  id: string
+  segment: SegmentId
+  amount: number
+  status: string
+  provider_order_id?: string | null
+  provider_payment_id?: string | null
+  qr_code?: string | null
+  qr_code_base64?: string | null
+  ticket_url?: string | null
+  expires_at?: string | null
+  valid_until?: string | null
+}
+
+const SEGMENT_MONTHLY_PRICE = 59.90
 
 type SegmentDefinition = {
   id: SegmentId
@@ -198,6 +224,49 @@ function getStoredSegment(userId: string) {
 
 function storeSegmentLocally(userId: string, segmentId: SegmentId) {
   localStorage.setItem(`erp-segment-${userId}`, segmentId)
+}
+
+
+function isSaasOwner(email?: string | null) {
+  const configured = String(import.meta.env.VITE_SAAS_OWNER_EMAILS || '')
+    .split(',')
+    .map((item: string) => item.trim().toLowerCase())
+    .filter(Boolean)
+  return Boolean(email && configured.includes(email.toLowerCase()))
+}
+
+function emptyAccessMap() {
+  return segmentCatalog.reduce((acc, item) => {
+    acc[item.id] = { segment: item.id, status: 'inactive', active: false, valid_until: null, days_left: 0 }
+    return acc
+  }, {} as Record<SegmentId, SegmentAccess>)
+}
+
+async function fetchSegmentAccessMap(userId: string) {
+  const map = emptyAccessMap()
+  const { data, error } = await supabase
+    .from('segment_subscriptions')
+    .select('segment,status,valid_until')
+    .eq('user_id', userId)
+
+  if (error) return { map, error }
+
+  for (const row of data || []) {
+    const segment = getSegment(row.segment)?.id
+    if (!segment) continue
+    const validUntilMs = row.valid_until ? new Date(row.valid_until).getTime() : 0
+    const active = row.status === 'active' && validUntilMs > Date.now()
+    const daysLeft = active ? Math.max(1, Math.ceil((validUntilMs - Date.now()) / 86400000)) : 0
+    map[segment] = {
+      segment,
+      status: active ? 'active' : (row.status || 'expired'),
+      active,
+      valid_until: row.valid_until || null,
+      days_left: daysLeft
+    }
+  }
+
+  return { map, error: null }
 }
 
 async function saveBusinessSegment(segmentId: SegmentId) {
@@ -560,11 +629,17 @@ function Login() {
 function SegmentHomePage({
   selectedSegment,
   onSelect,
-  saving
+  saving,
+  accessMap,
+  accessLoading,
+  ownerMode
 }: {
   selectedSegment: SegmentId | ''
   onSelect: (segmentId: SegmentId) => void
   saving: boolean
+  accessMap: Record<SegmentId, SegmentAccess>
+  accessLoading: boolean
+  ownerMode: boolean
 }) {
   return (
     <section className="space-y-6">
@@ -572,33 +647,41 @@ function SegmentHomePage({
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-bold text-emerald-300">
-              <Layers3 size={15} /> ERP MODULAR V27
+              <ShieldCheck size={15} /> ERP MODULAR POR ASSINATURA
             </div>
-            <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Escolha o segmento do seu sistema</h1>
+            <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl">Escolha o sistema que deseja ativar</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">
-              O menu é montado automaticamente para mostrar somente os módulos que fazem sentido para o negócio.
-              Você pode trocar o segmento depois nas configurações.
+              Cada segmento custa <strong className="text-emerald-300">{money(SEGMENT_MONTHLY_PRICE)} por 30 dias</strong>.
+              Após o vencimento, somente o segmento vencido é bloqueado até a renovação por Pix.
             </p>
           </div>
 
-          {selectedSegment && (
+          {ownerMode ? (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+              <span className="block text-xs font-semibold uppercase tracking-wide text-amber-400">Modo proprietário</span>
+              <strong className="mt-1 block text-base">Acesso liberado para administração</strong>
+            </div>
+          ) : selectedSegment ? (
             <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
               <span className="block text-xs font-semibold uppercase tracking-wide text-emerald-400">Segmento atual</span>
               <strong className="mt-1 block text-base">{getSegment(selectedSegment)?.name}</strong>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {segmentCatalog.map(segment => {
           const Icon = segment.icon
-          const active = selectedSegment === segment.id
+          const selected = selectedSegment === segment.id
+          const access = accessMap[segment.id]
+          const active = ownerMode || access?.active
+          const expired = !active && Boolean(access?.valid_until)
           return (
             <article
               key={segment.id}
               className={`group relative overflow-hidden rounded-3xl border p-5 shadow-xl transition hover:-translate-y-1 hover:border-slate-600 ${
-                active ? 'border-emerald-500 bg-slate-900 ring-2 ring-emerald-500/20' : 'border-slate-800 bg-slate-900'
+                selected && active ? 'border-emerald-500 bg-slate-900 ring-2 ring-emerald-500/20' : 'border-slate-800 bg-slate-900'
               }`}
             >
               <div className={`absolute inset-0 bg-gradient-to-br ${segment.accent} opacity-70`} />
@@ -607,33 +690,40 @@ function SegmentHomePage({
                   <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-slate-950/70 text-emerald-300 shadow-lg">
                     <Icon size={28} />
                   </div>
-                  {active && (
+                  {accessLoading ? (
+                    <span className="badge">Verificando...</span>
+                  ) : active ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500 px-2.5 py-1 text-xs font-black text-slate-950">
-                      <CheckCircle2 size={14} /> Ativo
+                      <CheckCircle2 size={14} /> {ownerMode ? 'Administrador' : `${access.days_left} dias`}
+                    </span>
+                  ) : (
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-black ${expired ? 'bg-red-500/20 text-red-300' : 'bg-slate-950/80 text-amber-300'}`}>
+                      <LockKeyhole size={14} /> {expired ? 'Vencido' : 'Bloqueado'}
                     </span>
                   )}
                 </div>
 
                 <h2 className="mt-5 text-xl font-black text-white">{segment.name}</h2>
                 <p className="mt-2 min-h-12 text-sm leading-6 text-slate-400">{segment.description}</p>
+                <p className="mt-3 text-lg font-black text-emerald-300">{money(SEGMENT_MONTHLY_PRICE)}<span className="text-xs font-semibold text-slate-500"> / 30 dias</span></p>
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   {segment.pages.filter(page => !['configuracoes', 'historico_cliente'].includes(page)).slice(0, 4).map(page => (
                     <span key={page} className="rounded-full border border-slate-700 bg-slate-950/60 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
-                      {segment.labels?.[page] || ({ dashboard: 'Dashboard', agenda: 'Agenda', caixa: 'Caixa', pdv: 'PDV', mesas: 'Mesas', cozinha: 'Cozinha', delivery: 'Delivery', veiculos: 'Veículos', checklist: 'Checklist', manutencao: 'Manutenção', ordens: 'Ordens', financeiro: 'Financeiro', relatorios: 'Relatórios', produtos: 'Produtos', clientes: 'Clientes', romaneios: 'Romaneios', ordens_servico: 'Ordens', inicio: 'Início', historico_cliente: 'Histórico', configuracoes: 'Configurações' } as Record<Page, string>)[page]}
+                      {segment.labels?.[page] || ({ dashboard: 'Dashboard', agenda: 'Agenda', caixa: 'Caixa', pdv: 'PDV', mesas: 'Mesas', cozinha: 'Cozinha', delivery: 'Delivery', veiculos: 'Veículos', checklist: 'Checklist', manutencao: 'Manutenção', ordens: 'Ordens', financeiro: 'Financeiro', relatorios: 'Relatórios', produtos: 'Produtos', clientes: 'Clientes', romaneios: 'Romaneios', ordens_servico: 'Ordens', inicio: 'Início', historico_cliente: 'Histórico', configuracoes: 'Configurações', matriculas: 'Matrículas', turmas: 'Turmas', presenca: 'Presença', certificados: 'Certificados', pets: 'Pets', vacinas: 'Vacinas', assinaturas: 'Assinaturas', empresas_saas: 'Multiempresa' } as Record<Page, string>)[page]}
                     </span>
                   ))}
                 </div>
 
                 <button
                   type="button"
-                  disabled={saving}
+                  disabled={saving || accessLoading}
                   onClick={() => onSelect(segment.id)}
                   className={`mt-5 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black transition disabled:cursor-wait disabled:opacity-60 ${
-                    active ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400' : 'border border-slate-700 bg-slate-950/70 text-white hover:border-emerald-500 hover:text-emerald-300'
+                    active ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400' : 'border border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20'
                   }`}
                 >
-                  {active ? 'Acessar sistema' : 'Usar este segmento'} <ArrowRight size={17} />
+                  {active ? (selected ? 'Acessar sistema' : 'Usar este sistema') : (expired ? 'Renovar com Pix' : 'Ativar com Pix')} <ArrowRight size={17} />
                 </button>
               </div>
             </article>
@@ -641,6 +731,180 @@ function SegmentHomePage({
         })}
       </div>
     </section>
+  )
+}
+
+function PaymentGatePage({
+  segment,
+  onBack,
+  onActivated
+}: {
+  segment: SegmentDefinition
+  onBack: () => void
+  onActivated: () => Promise<void>
+}) {
+  const [payment, setPayment] = useState<PixPayment | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [checking, setChecking] = useState(false)
+  const [finishing, setFinishing] = useState(false)
+  const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [secondsLeft, setSecondsLeft] = useState(0)
+
+  async function authHeaders() {
+    const { data } = await supabase.auth.getSession()
+    const token = data.session?.access_token
+    if (!token) throw new Error('Sua sessão expirou. Entre novamente no sistema.')
+    return { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }
+  }
+
+  async function createPix(force = false) {
+    setLoading(true)
+    setError('')
+    try {
+      const headers = await authHeaders()
+      const response = await fetch('/api/mercadopago/create-payment', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ segment: segment.id, force })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Não foi possível gerar o Pix.')
+      if (data.active) {
+        setFinishing(true)
+        await onActivated()
+        return
+      }
+      setPayment(data.payment)
+    } catch (err: any) {
+      setError(err.message || 'Erro ao gerar cobrança Pix.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function verifyPayment(silent = false) {
+    if (!payment?.id || finishing) return
+    if (!silent) setChecking(true)
+    try {
+      const headers = await authHeaders()
+      const response = await fetch('/api/mercadopago/payment-status', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ payment_id: payment.id })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Não foi possível consultar o pagamento.')
+      setPayment(current => current ? { ...current, ...data.payment } : data.payment)
+      if (data.active || data.payment?.status === 'approved') {
+        setFinishing(true)
+        await onActivated()
+      }
+    } catch (err: any) {
+      if (!silent) setError(err.message || 'Erro ao verificar pagamento.')
+    } finally {
+      if (!silent) setChecking(false)
+    }
+  }
+
+  useEffect(() => { createPix() }, [segment.id])
+
+  useEffect(() => {
+    if (!payment?.id || finishing) return
+    const interval = window.setInterval(() => verifyPayment(true), 5000)
+    return () => window.clearInterval(interval)
+  }, [payment?.id, finishing])
+
+  useEffect(() => {
+    function updateCountdown() {
+      if (!payment?.expires_at) return setSecondsLeft(0)
+      setSecondsLeft(Math.max(0, Math.floor((new Date(payment.expires_at).getTime() - Date.now()) / 1000)))
+    }
+    updateCountdown()
+    const interval = window.setInterval(updateCountdown, 1000)
+    return () => window.clearInterval(interval)
+  }, [payment?.expires_at])
+
+  async function copyPix() {
+    if (!payment?.qr_code) return
+    await navigator.clipboard.writeText(payment.qr_code)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 2000)
+  }
+
+  const minutes = String(Math.floor(secondsLeft / 60)).padStart(2, '0')
+  const seconds = String(secondsLeft % 60).padStart(2, '0')
+  const expired = Boolean(payment?.expires_at && secondsLeft <= 0)
+  const Icon = segment.icon
+
+  return (
+    <main className="min-h-screen bg-slate-950 p-4 text-white sm:p-6">
+      <div className="mx-auto max-w-5xl">
+        <button className="btn2" type="button" onClick={onBack}><ArrowRight className="rotate-180" size={17} /> Voltar aos sistemas</button>
+
+        <div className="mt-5 grid overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 shadow-2xl lg:grid-cols-[0.9fr_1.1fr]">
+          <section className={`relative overflow-hidden bg-gradient-to-br ${segment.accent} p-6 sm:p-9`}>
+            <div className="absolute inset-0 bg-slate-950/50" />
+            <div className="relative">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-slate-950/80 text-emerald-300"><Icon size={34} /></div>
+              <p className="mt-8 text-xs font-black uppercase tracking-[0.2em] text-emerald-300">Assinatura mensal</p>
+              <h1 className="mt-2 text-3xl font-black">{segment.name}</h1>
+              <p className="mt-3 text-sm leading-6 text-slate-300">{segment.description}</p>
+              <p className="mt-7 text-4xl font-black text-white">{money(SEGMENT_MONTHLY_PRICE)}<span className="text-sm text-slate-400"> / 30 dias</span></p>
+              <div className="mt-7 space-y-3 text-sm text-slate-200">
+                <p className="flex items-center gap-2"><CheckCircle2 className="text-emerald-300" size={18} /> Liberação automática após o pagamento</p>
+                <p className="flex items-center gap-2"><ShieldCheck className="text-emerald-300" size={18} /> Pagamento processado pelo Mercado Pago</p>
+                <p className="flex items-center gap-2"><Clock3 className="text-emerald-300" size={18} /> Validade de 30 dias por pagamento</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="p-5 sm:p-8">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500 text-slate-950"><QrCode size={27} /></div>
+              <div><h2 className="text-xl font-black">Pague com Pix</h2><p className="text-sm text-slate-400">A tela é liberada assim que o Mercado Pago confirmar.</p></div>
+            </div>
+
+            {loading && <div className="mt-8 rounded-2xl border border-slate-800 bg-slate-950 p-8 text-center text-slate-400"><RefreshCw className="mx-auto mb-3 animate-spin" /> Gerando QR Code seguro...</div>}
+
+            {error && <div className="mt-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200"><div className="flex gap-2"><AlertTriangle size={20} className="shrink-0" /><span>{error}</span></div><button className="btn2 mt-4" onClick={() => createPix(true)}>Tentar novamente</button></div>}
+
+            {!loading && payment && (
+              <div className="mt-6 space-y-4">
+                <div className="mx-auto flex max-w-xs items-center justify-center rounded-3xl bg-white p-4 shadow-xl">
+                  {payment.qr_code_base64 ? <img className="aspect-square w-full" src={`data:image/png;base64,${payment.qr_code_base64}`} alt="QR Code Pix" /> : <QrCode className="text-slate-900" size={190} />}
+                </div>
+
+                <div className={`rounded-2xl border p-3 text-center text-sm font-bold ${expired ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-amber-500/30 bg-amber-500/10 text-amber-200'}`}>
+                  {expired ? 'Este QR Code expirou. Gere uma nova cobrança.' : <>QR Code válido por <span className="font-black">{minutes}:{seconds}</span></>}
+                </div>
+
+                {payment.qr_code && !expired && (
+                  <div>
+                    <label className="label">Pix Copia e Cola</label>
+                    <div className="flex gap-2">
+                      <input className="input font-mono text-xs" readOnly value={payment.qr_code} />
+                      <button className="btn2 shrink-0" type="button" onClick={copyPix}><Copy size={17} /> {copied ? 'Copiado' : 'Copiar'}</button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {expired ? (
+                    <button className="btn sm:col-span-2" type="button" onClick={() => createPix(true)}><RefreshCw size={18} /> Gerar novo QR Code</button>
+                  ) : (
+                    <button className="btn" type="button" disabled={checking || finishing} onClick={() => verifyPayment(false)}><RefreshCw className={checking ? 'animate-spin' : ''} size={18} /> {finishing ? 'Liberando...' : 'Já paguei, verificar'}</button>
+                  )}
+                  {payment.ticket_url && !expired && <button className="btn2" type="button" onClick={() => window.open(payment.ticket_url!, '_blank')}><CreditCard size={18} /> Abrir no Mercado Pago</button>}
+                </div>
+
+                <p className="text-center text-xs leading-5 text-slate-500">A confirmação também é recebida automaticamente pelo webhook. Esta página consulta o status a cada 5 segundos.</p>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    </main>
   )
 }
 
@@ -652,7 +916,8 @@ function Sidebar({
   mobileOpen,
   setMobileOpen,
   segment,
-  storeName
+  storeName,
+  ownerMode
 }: {
   page: Page
   setPage: (p: Page) => void
@@ -662,6 +927,7 @@ function Sidebar({
   setMobileOpen: (v: boolean) => void
   segment: SegmentDefinition | null
   storeName: string
+  ownerMode: boolean
 }) {
   const allItems = [
     { id: 'inicio', label: 'Início', icon: Layers3 },
@@ -693,7 +959,7 @@ function Sidebar({
     { id: 'configuracoes', label: 'Configurações', icon: Settings }
   ] as const
 
-  const allowedPages = new Set<Page>(['inicio', 'assinaturas', 'empresas_saas', ...(segment?.pages || [])])
+  const allowedPages = new Set<Page>(['inicio', ...(ownerMode ? ['assinaturas', 'empresas_saas'] as Page[] : []), ...(segment?.pages || [])])
   const items = allItems
     .filter(item => allowedPages.has(item.id as Page))
     .map(item => ({ ...item, label: segment?.labels?.[item.id as Page] || item.label }))
@@ -3125,13 +3391,11 @@ type SaasCompany = {
 }
 
 const defaultPlans: SaasPlan[] = [
-  { name: 'Básico', monthly_price: 79, max_users: 2, max_companies: 1, storage_gb: 2, modules: 'PDV, clientes, produtos, caixa e relatórios', trial_days: 7, active: true },
-  { name: 'Profissional', monthly_price: 149, max_users: 5, max_companies: 1, storage_gb: 10, modules: 'Todos os módulos do segmento, financeiro, PDF/Excel e Google Drive', trial_days: 15, active: true },
-  { name: 'Premium', monthly_price: 249, max_users: 15, max_companies: 3, storage_gb: 30, modules: 'Multiempresa, portal do cliente, módulos avançados e suporte prioritário', trial_days: 30, active: true }
+  { name: 'Sistema por Segmento', monthly_price: SEGMENT_MONTHLY_PRICE, max_users: 5, max_companies: 1, storage_gb: 10, modules: 'Todos os módulos do segmento escolhido, PDF/Excel, financeiro e integrações', trial_days: 0, active: true }
 ]
 
 const emptySaasCompany: SaasCompany = {
-  company_name: '', responsible_name: '', email: '', phone: '', document: '', segment: 'loja', status: 'trial', plan_name: 'Profissional', trial_ends_at: '', subscription_ends_at: ''
+  company_name: '', responsible_name: '', email: '', phone: '', document: '', segment: 'loja', status: 'trial', plan_name: 'Sistema por Segmento', trial_ends_at: '', subscription_ends_at: ''
 }
 
 function addDaysIso(days: number) {
@@ -3264,7 +3528,7 @@ function SaasCompaniesPage() {
           <input className="input" placeholder="WhatsApp" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
           <input className="input" placeholder="CNPJ/CPF" value={form.document} onChange={e => setForm({ ...form, document: e.target.value })} />
           <select className="input" value={form.segment} onChange={e => setForm({ ...form, segment: e.target.value })}>{segmentCatalog.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-          <select className="input" value={form.plan_name} onChange={e => setForm({ ...form, plan_name: e.target.value })}><option>Básico</option><option>Profissional</option><option>Premium</option><option>Enterprise</option></select>
+          <select className="input" value={form.plan_name} onChange={e => setForm({ ...form, plan_name: e.target.value })}><option>Sistema por Segmento</option></select>
           <select className="input" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}><option value="trial">Em teste</option><option value="active">Ativa</option><option value="overdue">Atrasada</option><option value="suspended">Suspensa</option><option value="cancelled">Cancelada</option></select>
           <label className="text-sm text-slate-400">Teste até<input className="input mt-1" type="date" value={form.trial_ends_at} onChange={e => setForm({ ...form, trial_ends_at: e.target.value })} /></label>
           <label className="text-sm text-slate-400">Assinatura até<input className="input mt-1" type="date" value={form.subscription_ends_at} onChange={e => setForm({ ...form, subscription_ends_at: e.target.value })} /></label>
@@ -4858,8 +5122,13 @@ function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [segmentId, setSegmentId] = useState<SegmentId | ''>('')
+  const [paymentSegment, setPaymentSegment] = useState<SegmentId | ''>('')
+  const [segmentAccess, setSegmentAccess] = useState<Record<SegmentId, SegmentAccess>>(emptyAccessMap())
+  const [accessLoading, setAccessLoading] = useState(true)
   const [storeName, setStoreName] = useState('Sistema ERP')
   const [savingSegment, setSavingSegment] = useState(false)
+
+  const ownerMode = isSaasOwner(session?.user?.email)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -4870,34 +5139,71 @@ function App() {
       setSession(currentSession)
       if (!currentSession) {
         setSegmentId('')
+        setPaymentSegment('')
+        setSegmentAccess(emptyAccessMap())
         setPage('inicio')
       }
     })
     return () => listener.subscription.unsubscribe()
   }, [])
 
+  async function refreshSegmentAccess(userId = session?.user?.id) {
+    if (!userId) return emptyAccessMap()
+    if (isSaasOwner(session?.user?.email)) {
+      const ownerMap = emptyAccessMap()
+      for (const segment of segmentCatalog) ownerMap[segment.id] = { segment: segment.id, status: 'owner', active: true, valid_until: null, days_left: 9999 }
+      setSegmentAccess(ownerMap)
+      setAccessLoading(false)
+      return ownerMap
+    }
+
+    const { map } = await fetchSegmentAccessMap(userId)
+    setSegmentAccess(map)
+    setAccessLoading(false)
+    return map
+  }
+
   useEffect(() => {
     if (!session?.user?.id) return
 
     async function loadBusinessProfile() {
-      const settings = await getStoreSettings()
+      setAccessLoading(true)
+      const [settings, accessMap] = await Promise.all([
+        getStoreSettings(),
+        refreshSegmentAccess(session.user.id)
+      ])
       const databaseSegment = getSegment(settings?.business_segment)?.id || ''
       const localSegment = getStoredSegment(session.user.id)
       const resolvedSegment = databaseSegment || localSegment
 
       setSegmentId(resolvedSegment)
       setStoreName(settings?.store_name || 'Sistema ERP')
+
+      if (resolvedSegment && !isSaasOwner(session.user.email) && !accessMap[resolvedSegment]?.active) {
+        setPaymentSegment(resolvedSegment)
+      }
     }
 
     loadBusinessProfile()
   }, [session?.user?.id])
 
-  async function chooseSegment(nextSegment: SegmentId) {
+  useEffect(() => {
+    if (!session?.user?.id || !segmentId || ownerMode) return
+    const interval = window.setInterval(async () => {
+      const map = await refreshSegmentAccess(session.user.id)
+      if (!map[segmentId]?.active) setPaymentSegment(segmentId)
+    }, 60000)
+    return () => window.clearInterval(interval)
+  }, [session?.user?.id, segmentId, ownerMode])
+
+  async function activateAndOpenSegment(nextSegment: SegmentId) {
     setSavingSegment(true)
     const error = await saveBusinessSegment(nextSegment)
     setSegmentId(nextSegment)
     setPage('dashboard')
+    setPaymentSegment('')
     setMobileMenuOpen(false)
+    await refreshSegmentAccess()
     setSavingSegment(false)
 
     if (error) {
@@ -4905,8 +5211,34 @@ function App() {
     }
   }
 
+  async function chooseSegment(nextSegment: SegmentId) {
+    if (!ownerMode) {
+      const latest = await refreshSegmentAccess()
+      if (!latest[nextSegment]?.active) {
+        setPaymentSegment(nextSegment)
+        setPage('inicio')
+        setMobileMenuOpen(false)
+        return
+      }
+    }
+    await activateAndOpenSegment(nextSegment)
+  }
+
+  async function paymentActivated() {
+    if (!paymentSegment) return
+    await refreshSegmentAccess()
+    await activateAndOpenSegment(paymentSegment)
+  }
+
   if (loading) return <main className="min-h-screen bg-slate-950 text-white flex items-center justify-center">Carregando...</main>
   if (!session) return <Login />
+
+  if (paymentSegment && !ownerMode) {
+    const paymentDefinition = getSegment(paymentSegment)
+    if (paymentDefinition) {
+      return <PaymentGatePage segment={paymentDefinition} onBack={() => { setPaymentSegment(''); setPage('inicio') }} onActivated={paymentActivated} />
+    }
+  }
 
   const segment = getSegment(segmentId)
   const titles: Record<Page, string> = {
@@ -4952,15 +5284,23 @@ function App() {
         setMobileOpen={setMobileMenuOpen}
         segment={segment}
         storeName={storeName}
+        ownerMode={ownerMode}
       />
       <main className="min-w-0 flex-1 overflow-x-hidden">
         <Header title={currentTitle} onOpenMenu={() => setMobileMenuOpen(true)} />
         <div className="w-full max-w-full p-3 sm:p-4 lg:p-6">
           {(page === 'inicio' || !segment) && (
-            <SegmentHomePage selectedSegment={segmentId} onSelect={chooseSegment} saving={savingSegment} />
+            <SegmentHomePage
+              selectedSegment={segmentId}
+              onSelect={chooseSegment}
+              saving={savingSegment}
+              accessMap={segmentAccess}
+              accessLoading={accessLoading}
+              ownerMode={ownerMode}
+            />
           )}
-          {page === 'assinaturas' && <SaasSubscriptionsPage />}
-          {page === 'empresas_saas' && <SaasCompaniesPage />}
+          {ownerMode && page === 'assinaturas' && <SaasSubscriptionsPage />}
+          {ownerMode && page === 'empresas_saas' && <SaasCompaniesPage />}
           {segment && page === 'dashboard' && <Dashboard />}
           {segment && page === 'agenda' && <AgendaPage segment={segment} />}
           {segment && page === 'caixa' && <CashPage />}

@@ -1,0 +1,18 @@
+V34 - MERCADO PAGO, PIX E ASSINATURA POR SEGMENTO
+
+- Cada segmento custa R$ 59,90 por 30 dias.
+- Segmentos bloqueados exibem uma tela profissional de pagamento Pix.
+- QR Code e Pix Copia e Cola gerados pela Orders API do Mercado Pago.
+- Liberação automática por webhook após confirmação do pagamento.
+- Consulta automática do pagamento a cada 5 segundos como redundância.
+- Renovação soma 30 dias ao vencimento atual quando ainda houver saldo.
+- Bloqueio automático quando a validade expira.
+- Cada segmento possui assinatura independente.
+- Usuários proprietários configurados em VITE_SAAS_OWNER_EMAILS possuem bypass.
+- Menus Assinaturas/Multiempresa ficam visíveis somente para proprietários.
+- Credenciais privadas ficam em funções serverless da Vercel.
+- Nova migração: supabase/v34_mercado_pago_assinaturas_migration.sql
+- Novas rotas:
+  /api/mercadopago/create-payment
+  /api/mercadopago/payment-status
+  /api/mercadopago/webhook

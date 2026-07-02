@@ -1,7 +1,7 @@
 {
-  "name": "bazar-eletronicos-v33-saas-multiempresa",
+  "name": "bazar-eletronicos-v34-mercado-pago-assinaturas",
   "private": true,
-  "version": "33.0.0",
+  "version": "34.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
     "@supabase/supabase-js": "^2.45.4",
     "jspdf": "^2.5.2",
     "lucide-react": "^0.468.0",
+    "mercadopago": "^3.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "xlsx": "^0.18.5"

@@ -2,5 +2,10 @@
   "framework": "vite",
   "installCommand": "npm ci --registry=https://registry.npmjs.org/ --no-audit --no-fund",
   "buildCommand": "npm run build",
-  "outputDirectory": "dist"
+  "outputDirectory": "dist",
+  "functions": {
+    "api/mercadopago/*.js": {
+      "maxDuration": 20
+    }
+  }
 }

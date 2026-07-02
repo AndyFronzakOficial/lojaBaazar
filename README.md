@@ -1,3 +1,43 @@
+# Bazar Eletrônicos ERP - V34 Mercado Pago e Assinaturas
+
+A V34 transforma a seleção de segmentos em uma assinatura paga. Cada sistema custa **R$ 59,90 por 30 dias**, com pagamento Pix pelo Mercado Pago, bloqueio no vencimento e liberação automática após a confirmação.
+
+## Novidades da V34
+
+- Pagamento independente para cada segmento.
+- QR Code Pix e Pix Copia e Cola gerados no backend.
+- Preço fixo de R$ 59,90 e validade de 30 dias definidos no servidor.
+- Bloqueio automático do segmento ao vencer.
+- Liberação automática por Webhook do Mercado Pago.
+- Verificação do status a cada 5 segundos para liberar a tela sem precisar atualizar.
+- Renovação antecipada soma mais 30 dias à validade atual.
+- Modo proprietário por e-mail, sem cobrança, para administrar a plataforma.
+- Credenciais privadas protegidas em funções serverless da Vercel.
+
+## Instalação obrigatória
+
+1. Execute no Supabase:
+
+```sql
+supabase/v34_mercado_pago_assinaturas_migration.sql
+```
+
+2. Configure as variáveis da Vercel conforme:
+
+```txt
+MERCADO_PAGO_CONFIGURACAO.md
+```
+
+3. Configure o Webhook do evento **Order (Mercado Pago)** apontando para:
+
+```txt
+https://SEU-DOMINIO.vercel.app/api/mercadopago/webhook
+```
+
+4. Faça um novo deploy na Vercel.
+
+---
+
 # Bazar Eletrônicos ERP - V33 SaaS Multiempresa
 
 Esta versão transforma o sistema em uma base SaaS para vender assinaturas.
